@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>F1 Race Hub</title>
+  <meta name="description" content="Formula 1 race results, season schedule, championship standings, race analytics and a title forecast.">
+  <meta name="theme-color" content="#0a0c10">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0c10'/%3E%3Crect x='9' y='6' width='5' height='20' rx='2' fill='%23ff1e02'/%3E%3Crect x='17' y='6' width='7' height='5' rx='2' fill='%23ff1e02'/%3E%3Crect x='17' y='14' width='5' height='4' rx='2' fill='%23ff1e02'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- Mobile top bar -->
+    <header class="topbar">
+      <button class="icon-btn" id="menuToggle" aria-label="Open menu" aria-expanded="false">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <span class="topbar__title">F1 Race Hub</span>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
+      <div class="brand">
+        <span class="brand__mark" aria-hidden="true"></span>
+        <span class="brand__text">F1 <strong>Race Hub</strong></span>
+        <span class="brand__season" id="brandSeason">2026</span>
+      </div>
+
+      <nav class="nav" aria-label="Sections">
+        <a class="nav__link" data-route="latest" href="#/latest">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5L20 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".35"/></svg>
+          Latest Race
+        </a>
+        <a class="nav__link" data-route="season" href="#/season">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 9h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          Season
+        </a>
+        <a class="nav__link" data-route="standings" href="#/standings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10M12 20V4M19 20v-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Standings
+        </a>
+        <a class="nav__link" data-route="dashboard" href="#/dashboard">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="9" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13.5" y="3.5" width="7" height="5" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="3.5" y="15.5" width="7" height="5" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13.5" y="11.5" width="7" height="9" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+          Race Analytics
+        </a>
+        <a class="nav__link" data-route="forecast" href="#/forecast">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-5 4 4 8-8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 8h5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Title Forecast
+        </a>
+      </nav>
+
+      <div class="nav-group">
+        <div class="nav-group__head">
+          <span>Drivers</span>
+          <span class="nav-group__hint">pick a driver</span>
+        </div>
+        <label class="driver-select-wrap" for="driverSelect">
+          <select id="driverSelect" class="driver-select" aria-label="Choose a driver">
+            <option value="">Loading drivers…</option>
+          </select>
+          <svg class="driver-select-wrap__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </label>
+      </div>
+
+      <div class="sidebar__foot">
+        <button class="theme-btn" id="themeToggle" aria-label="Toggle colour theme">
+          <span class="theme-btn__icon" aria-hidden="true"></span>
+          <span class="theme-btn__label">Theme</span>
+        </button>
+        <span class="sidebar__src" id="dataSource">Connecting…</span>
+      </div>
+    </aside>
+
+    <div class="scrim" id="scrim" hidden></div>
+
+    <!-- Main view -->
+    <div class="main-col">
+      <main class="main" id="view" tabindex="-1">
+        <div class="loader"><span class="loader__spin"></span> Loading…</div>
+      </main>
+      <footer class="legal">
+        Unofficial fan project, not associated in any way with the Formula 1 companies or the FIA.
+        F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and related marks
+        are trade marks of Formula One Licensing B.V. Race data from the
+        <a href="https://github.com/jolpica/jolpica-f1" target="_blank" rel="noopener">Jolpica F1 API</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

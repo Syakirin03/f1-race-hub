@@ -1,0 +1,6 @@
+# The database is rebuilt by ingest.py (and cached between CI runs), so it isn't committed.
+data/
+# Build output of export.py
+dist/
+__pycache__/
+*.pyc

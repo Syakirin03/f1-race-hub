@@ -1,0 +1,63 @@
+# Keeps the live site current: sync race data -> build static site -> publish to GitHub Pages.
+name: Update data and deploy
+
+on:
+  schedule:
+    - cron: "17 6 * * *"   # daily at 06:17 UTC: picks up results, penalties and late lap data
+  workflow_dispatch:        # the "Run workflow" button on the Actions tab
+  push:
+    branches: [main]        # deploy code changes straight away
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      # Reuse the previous run's database so the sync is incremental (~25 API calls).
+      # If the cache has expired, ingest.py simply rebuilds the season from scratch.
+      - name: Restore database
+        uses: actions/cache/restore@v6
+        with:
+          path: data/f1.db
+          key: f1-db-${{ github.run_id }}
+          restore-keys: f1-db-
+
+      - name: Sync race data
+        run: python ingest.py
+
+      - name: Save database
+        uses: actions/cache/save@v6
+        with:
+          path: data/f1.db
+          key: f1-db-${{ github.run_id }}
+
+      - name: Build static site
+        run: python export.py
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
