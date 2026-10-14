@@ -36,8 +36,10 @@ async function getJSON(path) {
    published static export. Fall back to the live Jolpica API otherwise. */
 async function detectDataSource() {
   try {
+    // Generous on purpose: a missing file fails fast (404 / file://), but a first visit on a
+    // slow connection can take well over a second, and timing out would bypass our own data.
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 1500);
+    const timer = setTimeout(() => ctrl.abort(), 8000);
     const r = await fetch("api/health.json", { signal: ctrl.signal, cache: "no-store" });
     clearTimeout(timer);
     if (r.ok) {
