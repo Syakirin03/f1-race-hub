@@ -30,6 +30,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "data" / "f1.db"
+PREDICTIONS = ROOT / "predictions"   # written by ml/predict_next_season.py
 
 STATIC_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -370,6 +371,8 @@ class Handler(BaseHTTPRequestHandler):
         rel = "index.html" if path in ("", "/") else unquote(path).lstrip("/")
         target = (ROOT / rel).resolve()
         ctype = STATIC_TYPES.get(target.suffix.lower())
+        if target.suffix.lower() == ".json" and target.parent == PREDICTIONS:
+            ctype = "application/json; charset=utf-8"    # the published prediction, and no other JSON
         # only whitelisted file types inside the project folder (never the .db or .py files)
         if not ctype or not target.is_relative_to(ROOT) or not target.is_file():
             body = b"Not found"

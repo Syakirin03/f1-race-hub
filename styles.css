@@ -446,6 +446,7 @@ table.grid td.num, table.grid th.num { text-align: right; font-family: var(--fon
 
 .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; align-items: start; }
 .dash-grid .span-2 { grid-column: 1 / -1; }
+.dash-grid > * { min-width: 0; }   /* wide tables scroll inside their card instead of widening the grid */
 
 .bar-list { display: flex; flex-direction: column; gap: 7px; margin-top: 6px; }
 .bar-row { display: grid; grid-template-columns: 112px 1fr 44px; align-items: center; gap: 10px; font-size: 13px; }
@@ -549,6 +550,85 @@ td .lead-tag { font-size: 10px; color: var(--gold); font-family: var(--font-disp
 tr.skew-hi td:first-child { box-shadow: inset 3px 0 0 var(--team); }
 
 /* ============================================================
+   Next-season prediction
+   ============================================================ */
+.toc { display: flex; gap: 8px; flex-wrap: wrap; margin: -8px 0 20px; }
+.toc button {
+  cursor: pointer; font-family: var(--font-body); font-size: 12.5px; font-weight: 500;
+  color: var(--muted); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; padding: 5px 12px;
+}
+.toc button:hover { color: var(--fg); border-color: var(--border-2); }
+[id^="pr-"] { scroll-margin-top: 16px; }
+.prose { color: var(--muted); max-width: 780px; margin: 0 0 14px; font-size: 14.5px; }
+.prose b { color: var(--fg); font-weight: 600; }
+.table-note { color: var(--faint); font-size: 12px; margin: 8px 0 16px; max-width: 900px; }
+.table-note b { color: var(--muted); font-weight: 600; }
+
+.step-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.step {
+  display: flex; flex-direction: column; align-items: flex-start;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px;
+}
+.step__n {
+  display: inline-grid; place-content: center; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent-weak); color: var(--accent-ink);
+  font-family: var(--font-display); font-weight: 700; font-size: 14px;
+}
+.step h3 { font-size: 16px; margin: 10px 0 6px; }
+.step p { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.55; flex: 1 1 auto; }
+.step p b { color: var(--fg); font-weight: 600; }
+.step__tag { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 3px 8px; border-radius: 20px; }
+.step__tag.learned { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+.step__tag.sim { color: var(--s1); background: color-mix(in srgb, var(--s1) 14%, transparent); }
+
+.range-list { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.range-row { display: grid; grid-template-columns: 112px 1fr 44px; align-items: center; gap: 10px; font-size: 13px; padding: 1px 0; border-radius: 4px; }
+.range-row:not(.range-axis):hover { background: var(--surface-2); }
+.range-track { position: relative; height: 18px; background: linear-gradient(var(--border), var(--border)) center / 100% 1px no-repeat; }
+.range-track i { position: absolute; display: block; }
+.range-80 { top: 7px; height: 4px; border-radius: 2px; background: var(--team); opacity: .4; }
+.range-50 { top: 4px; height: 10px; border-radius: 3px; background: var(--team); opacity: .85; }
+.range-dot { top: 4px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--fg); box-shadow: 0 0 0 2px var(--surface); }
+.range-ticks { position: relative; height: 16px; font-family: var(--font-mono); font-size: 10px; color: var(--faint); }
+.range-ticks span { position: absolute; transform: translateX(-50%); }
+
+table.grid.compact { min-width: 0; font-size: 13px; }
+table.grid.compact th, table.grid.compact td { padding: 8px 12px; }
+table.grid.heat { min-width: 640px; }
+table.grid.heat td.hc { text-align: center; font-family: var(--font-mono); font-size: 12px; min-width: 46px; padding: 9px 6px; }
+table.grid.heat th.num { text-align: center; }
+.muted-num { color: var(--faint); }
+table.grid tr.is-used td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+table.grid tr.is-used td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+
+.formula {
+  font-family: var(--font-mono); font-size: 13.5px; color: var(--fg);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 12px 16px; overflow-x: auto; white-space: nowrap;
+}
+.formula sub { font-size: 10px; color: var(--muted); }
+.calc-card {
+  margin-top: 12px; padding: 14px 16px; background: var(--surface);
+  border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius);
+}
+.calc-card__head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+table.calc { border-collapse: collapse; font-size: 13.5px; }
+table.calc td { padding: 4px 10px 4px 0; white-space: nowrap; }
+table.calc .op { color: var(--faint); font-family: var(--font-mono); width: 14px; }
+table.calc .expr, table.calc .val { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+table.calc .val { min-width: 64px; }
+table.calc .what { color: var(--muted); white-space: normal; padding-left: 8px; }
+table.calc tr.total td { border-top: 1px solid var(--border-2); padding-top: 8px; font-weight: 600; }
+table.calc tr.total .val { color: var(--accent-ink); }
+.calc-after { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 780px; }
+.calc-after b { color: var(--fg); }
+
+.limits { margin: 0; padding-left: 20px; color: var(--muted); font-size: 14px; max-width: 820px; }
+.limits li { margin: 7px 0; }
+.limits b { color: var(--fg); font-weight: 600; }
+
+/* ============================================================
    Responsive
    ============================================================ */
 @media (max-width: 860px) {
@@ -565,7 +645,8 @@ tr.skew-hi td:first-child { box-shadow: inset 3px 0 0 var(--team); }
   .main { padding: 20px 16px 56px; }
   .chart-grid { grid-template-columns: 1fr; }
   .dash-grid { grid-template-columns: 1fr; }
-  .bar-row, .mover-row { grid-template-columns: 92px 1fr 40px; }
+  .bar-row, .mover-row, .range-row { grid-template-columns: 92px 1fr 40px; }
+  table.calc .expr { display: none; }   /* keep the result and the explanation on narrow screens */
   .stint-row { grid-template-columns: 92px 1fr; }
   .podium { grid-template-columns: 1fr; }
   .scenario-row { flex-wrap: wrap; }

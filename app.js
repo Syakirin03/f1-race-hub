@@ -1484,6 +1484,444 @@ function renderRemainingPoints(selMap) {
 }
 
 /* ============================================================
+   NEXT-SEASON PREDICTION
+   Computed offline by ml/predict_next_season.py from the data warehouse
+   (Plackett–Luce strengths → carry-over regression → 10,000 simulated
+   seasons, plus a walk-forward backtest) and published as
+   predictions/next-season.json. This page presents and explains it.
+   ============================================================ */
+let predictionCache = null;
+async function getPrediction() {
+  if (predictionCache) return predictionCache;
+  const r = await fetch("predictions/next-season.json", { cache: "no-cache" });
+  if (!r.ok) throw new Error(r.status === 404 ? "The prediction file hasn't been generated yet." : `HTTP ${r.status} loading the prediction`);
+  predictionCache = await r.json();
+  return predictionCache;
+}
+function pctLabel(p) {
+  const v = p * 100;
+  if (v >= 9.95) return v.toFixed(0) + "%";
+  if (v >= 0.95) return v.toFixed(1) + "%";
+  return v > 0 ? "<1%" : "—";
+}
+const pctInt = (p) => Math.round(p * 100) + "%";
+function num2(x) { return (x < 0 ? "−" : "") + Math.abs(x).toFixed(2); }
+function signed2(x) { return (x < 0 ? "−" : "+") + Math.abs(x).toFixed(2); }
+function lastName(name) { return name.split(" ").slice(-1)[0]; }
+function shortTeam(t) { return t.replace(/ F1 Team$/, ""); }
+const METHOD_LABELS = { repeat: "Last year repeats", noSurprise: "Model, no winter surprise", model: "Model (used here)" };
+
+async function renderPrediction() {
+  showLoader("Loading the prediction…");
+  let P;
+  try { P = await getPrediction(); }
+  catch (err) {
+    view.innerHTML = `
+      <div class="errbox">
+        <h2>Prediction not available</h2>
+        <p>${esc(err.message)}</p>
+        <p>It's computed offline from the data warehouse. In the project folder run
+          <code>python warehouse/build_warehouse.py</code>, then <code>python ml/predict_next_season.py</code>, and refresh.</p>
+      </div>`;
+    return;
+  }
+  try { paintPrediction(P); } catch (err) { showError(err); }
+}
+
+function paintPrediction(P) {
+  const { drivers: D, constructors: C, model: M, backtest: B, settings: S, dataThrough: T } = P;
+  const co = M.coefficients, sm = B.summary;
+  const fav = [...D].sort((a, b) => b.title - a.title)[0];
+  const favTeam = [...C].sort((a, b) => b.title - a.title)[0];
+  const provisional = T.round < T.roundsInSeason;
+  const generated = new Date(P.generatedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  const sims = S.simulations.toLocaleString();
+  const btFirst = B.seasons[0].season, btLast = B.seasons[B.seasons.length - 1].season;
+  const trap = P.retirementTrap.slice(0, 8);
+  const trapWorst = [...trap].sort((a, b) => (b.strength - b.strengthAllStarters) - (a.strength - a.strengthAllStarters))[0];
+  const changes = Object.keys(S.lineupChanges || {}).length;
+
+  const status = provisional
+    ? `<span class="status-pill open">● Provisional: uses ${T.season} up to round ${T.round} of ${T.roundsInSeason} (${esc(T.race.replace(/ Grand Prix$/, ""))}) and updates as the season finishes</span>`
+    : `<span class="status-pill clinched">● Based on the complete ${T.season} season</span>`;
+
+  view.innerHTML = `
+    <div class="page-head">
+      <span class="eyebrow">Machine-learning forecast</span>
+      <h1>${P.season} Championship Prediction</h1>
+      <p class="sub">Who is most likely to be champion in ${P.season}, estimated before a ${P.season} car has turned a wheel:
+        ${sims} simulated seasons from a model trained on every Grand Prix since ${M.firstSeason}.</p>
+      <p class="sub">${status}</p>
+    </div>
+
+    <nav class="toc" aria-label="On this page">
+      <button type="button" data-jump="pr-forecast">Forecast</button>
+      <button type="button" data-jump="pr-method">How it works</button>
+      <button type="button" data-jump="pr-calc">The calculation</button>
+      <button type="button" data-jump="pr-backtest">Track record</button>
+      <button type="button" data-jump="pr-limits">Limitations</button>
+    </nav>
+
+    <div class="kpi-row">
+      <div class="kpi" style="--kc:${teamColor(fav.team)}"><div class="k">Favourite</div><div class="v">${esc(fav.code)} · ${pctLabel(fav.title)}</div><div class="meta2">${esc(fav.name)}</div></div>
+      <div class="kpi" style="--kc:${teamColor(favTeam.name)}"><div class="k">Constructors' favourite</div><div class="v">${esc(shortTeam(favTeam.name))} · ${pctLabel(favTeam.title)}</div><div class="meta2">title chance</div></div>
+      <div class="kpi" style="--kc:var(--s1)"><div class="k">Simulated seasons</div><div class="v">${sims}</div><div class="meta2">× ${S.races} races each</div></div>
+      <div class="kpi" style="--kc:var(--s3)"><div class="k">Track record</div><div class="v">${pctInt(sm.model.coverage)}</div><div class="meta2">inside the 80% range, ${btFirst}–${String(btLast).slice(2)}</div></div>
+    </div>
+
+    <h2 class="section-title" id="pr-forecast">The forecast</h2>
+    <div class="dash-grid" style="margin-top:0">
+      <div class="chart-card">
+        <h3>Drivers' title chance</h3>
+        <p class="csub">Share of the ${sims} simulated ${P.season} seasons that each driver finishes on top.</p>
+        <div class="bar-list">${probBars(D.filter((d) => d.title >= 0.005).sort((a, b) => b.title - a.title), (d) => `${d.code} · ${lastName(d.name)}`, (d) => d.team)}</div>
+      </div>
+      <div class="chart-card">
+        <h3>Constructors' title chance</h3>
+        <p class="csub">Both cars' points added together, in the same simulated seasons.</p>
+        <div class="bar-list">${probBars(C.filter((t) => t.title >= 0.005), (t) => shortTeam(t.name), (t) => t.name)}</div>
+      </div>
+
+      <div class="chart-card span-2">
+        <h3>Predicted ${P.season} points</h3>
+        <p class="csub">Dot: expected points. Thick bar: the middle half of simulated seasons. Thin bar: 80% of them. The width is the honest size of not knowing yet how good each car will be.</p>
+        <div id="prRange"></div>
+      </div>
+
+      <div class="span-2">
+        <div class="table-wrap">
+          <table class="grid">
+            <thead><tr>
+              <th>Pred.</th><th>Driver</th><th>Team</th>
+              <th class="num">Title</th><th class="num">Top 3</th><th class="num">Exp. pts</th><th class="num">Likely range (80%)</th>
+            </tr></thead>
+            <tbody>${D.map((d, i) => `
+              <tr style="--team:${teamColor(d.team)}">
+                <td class="pos-cell ${["", "p1", "p2", "p3"][i + 1] || ""}">${i + 1}</td>
+                <td><span class="driver-cell"><a href="#/driver/${encodeURIComponent(d.id)}">${esc(d.name)}</a>${d.inputs.rookie ? ` <span class="code">rookie</span>` : ""}</span></td>
+                <td><span class="team-tag"><i class="bar"></i>${esc(shortTeam(d.team))}</span></td>
+                <td class="num prob-pct">${pctLabel(d.title)}</td>
+                <td class="num">${pctLabel(d.top3)}</td>
+                <td class="num"><b>${Math.round(d.mean)}</b></td>
+                <td class="num"><span class="proj-range">${d.p10}–${d.p90}</span></td>
+              </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="chart-card span-2">
+        <h3>Final championship position</h3>
+        <p class="csub">How often each driver finishes the ${P.season} championship in each place, for the ten highest expected scorers.</p>
+        <div class="table-wrap">${positionHeat(D, 10)}</div>
+      </div>
+    </div>
+
+    <h2 class="section-title" id="pr-method">How the prediction works</h2>
+    <p class="prose">The model answers one question: <b>how much of what happened in ${T.season} will still be true in ${P.season}?</b>
+      Steps 1–3 are the machine learning: every number is learned from past results, none is set by hand.
+      Step 4 turns what was learned into probabilities.</p>
+    <div class="step-grid">
+      <div class="step">
+        <span class="step__n">1</span><h3>Measure every driver's pace</h3>
+        <p>A <b>Plackett–Luce</b> model reads each race result as a series of picks: the winner is picked from the whole field,
+          P2 from the drivers left, and so on. Every driver gets a <b>strength</b>, chosen so the real finishing orders are
+          as likely as possible (maximum likelihood). A driver 1.0 stronger is <b>2.7×</b> as likely to be picked first.
+          Fitted for each season on ${M.races} races, ${M.firstSeason}–${T.season}.</p>
+        <span class="step__tag learned">Learned from data</span>
+      </div>
+      <div class="step">
+        <span class="step__n">2</span><h3>Learn what carries over</h3>
+        <p>A regression on <b>${M.trainingPairs} driver-seasons</b> (${M.trainingSeasons[0]}–${M.trainingSeasons[1]}) links each
+          driver's strength to the season before: the <b>car</b> (the team's strength last year) and the <b>driver</b>
+          (their edge over their own teammate). It learned that <b>${pctInt(co.team_prev)}</b> of a car's advantage survives
+          a winter, <b>${pctInt(co.driver_edge)}</b> of a driver's edge does, and rookies start <b>${num2(Math.abs(co.rookie))}</b> behind.</p>
+        <span class="step__tag learned">Learned from data</span>
+      </div>
+      <div class="step">
+        <span class="step__n">3</span><h3>Measure the winter surprise</h3>
+        <p>How far teams and drivers landed from that prediction in the past: typically <b>±${M.sigmaTeam.toFixed(2)}</b> for a whole car
+          and <b>±${M.sigmaDriver.toFixed(2)}</b> for a driver, so the car is the big unknown. Noise in the strengths themselves
+          (±${M.measurementNoise.toFixed(2)}, found by fitting each season twice, on its odd and its even races) is taken out,
+          so luck isn't counted twice.</p>
+        <span class="step__tag learned">Learned from data</span>
+      </div>
+      <div class="step">
+        <span class="step__n">4</span><h3>Simulate ${P.season}, ${sims} times</h3>
+        <p>Each simulated season draws a winter surprise for every car and driver, then runs <b>${S.races} races</b>. Each driver
+          retires with probability <b>${pctInt(S.dnfRate)}</b> (the recent average); the finishers are ordered by strength plus
+          random race-day luck, and score ${S.points.join("-")}. A title chance is the share of seasons a driver ends on top.</p>
+        <span class="step__tag sim">Simulation</span>
+      </div>
+    </div>
+
+    <div class="kpi-row" style="margin-top:14px">
+      <div class="kpi" style="--kc:var(--s1)"><div class="k">Car carry-over</div><div class="v">${pctInt(co.team_prev)}</div><div class="meta2">of last year's advantage</div></div>
+      <div class="kpi" style="--kc:var(--s3)"><div class="k">Driver carry-over</div><div class="v">${pctInt(co.driver_edge)}</div><div class="meta2">of the edge over a teammate</div></div>
+      <div class="kpi" style="--kc:var(--s4)"><div class="k">Rookie start</div><div class="v">${num2(co.rookie)}</div><div class="meta2">strength vs the car alone</div></div>
+      <div class="kpi" style="--kc:var(--s5)"><div class="k">Winter surprise</div><div class="v">±${M.sigmaTeam.toFixed(2)}</div><div class="meta2">car · ±${M.sigmaDriver.toFixed(2)} driver</div></div>
+    </div>
+
+    <div class="dash-grid">
+      <div class="chart-card">
+        <h3>How much of a car's advantage survives a winter?</h3>
+        <p class="csub">Each dot is one team in one season, ${M.trainingSeasons[0]}–${M.trainingSeasons[1]}. On the dashed line everything would
+          carry over. The red line is what the model learned.</p>
+        <div class="chart" id="prCarry"></div>
+        <div class="chart-legend">
+          <span><i class="forecast" style="border-top-color:var(--faint)"></i>Everything carries over</span>
+          <span><i style="border-top-color:var(--accent)"></i>Learned: ${pctInt(co.team_prev)} carries over</span>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>Why retirements are left out of step 1</h3>
+        <p class="csub">Counting a retirement as "finished last" tells the model the driver lost to the entire field.
+          ${trapWorst ? `${esc(trapWorst.name)} (${trapWorst.dnfs} retirements) would rate ${num2(trapWorst.strengthAllStarters)} instead of ${num2(trapWorst.strength)}.` : ""}
+          So pace is learned from finishers only, and retirements are simulated separately in step 4.</p>
+        <div class="table-wrap">
+          <table class="grid compact">
+            <thead><tr><th>${T.season} driver</th><th class="num">Pts</th><th class="num">DNFs</th><th class="num">DNF = last</th><th class="num">Finishers only</th></tr></thead>
+            <tbody>${trap.map((t) => `
+              <tr style="--team:${teamColor(t.team)}">
+                <td><span class="team-tag"><i class="bar"></i>${esc(t.name)}</span></td>
+                <td class="num">${t.points}</td><td class="num">${t.dnfs}</td>
+                <td class="num muted-num">${num2(t.strengthAllStarters)}</td><td class="num"><b>${num2(t.strength)}</b></td>
+              </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="section-title" id="pr-calc">The calculation, driver by driver</h2>
+    <p class="prose">Every driver's predicted ${P.season} strength comes from the same three inputs and the learned weights:</p>
+    <div class="formula">strength<sub>${P.season}</sub> = ${num2(co.intercept)} + ${num2(co.team_prev)} × car<sub>${T.season}</sub> + ${num2(co.driver_edge)} × driver edge<sub>${T.season}</sub> ${co.rookie < 0 ? "−" : "+"} ${num2(Math.abs(co.rookie))} × rookie</div>
+    <div class="calc-card">
+      <div class="calc-card__head">
+        <span class="scenario-bar__title">Worked example</span>
+        <div class="round-select-wrap">
+          <select class="round-select" id="calcDriver" aria-label="Driver for the worked example">
+            ${D.map((d) => `<option value="${esc(d.id)}" ${d.id === fav.id ? "selected" : ""}>${esc(d.name)}</option>`).join("")}
+          </select>${CHEVRON}
+        </div>
+      </div>
+      <div id="calcBody"></div>
+    </div>
+    <div class="table-wrap" style="margin-top:14px">
+      <table class="grid">
+        <thead><tr>
+          <th>Driver</th><th>${P.season} team</th>
+          <th class="num" title="Team's ${T.season} strength (the car)">Car ${T.season}</th>
+          <th class="num" title="Edge over their ${T.season} teammate">Driver edge</th>
+          <th class="num">Rookie</th><th class="num">Predicted strength</th><th class="num">Title</th>
+        </tr></thead>
+        <tbody>${[...D].sort((a, b) => b.inputs.strength - a.inputs.strength).map((d) => `
+          <tr style="--team:${teamColor(d.team)}">
+            <td><span class="driver-cell"><a href="#/driver/${encodeURIComponent(d.id)}">${esc(d.name)}</a></span></td>
+            <td><span class="team-tag"><i class="bar"></i>${esc(shortTeam(d.team))}</span></td>
+            <td class="num">${num2(d.inputs.teamPrev)}${d.inputs.newTeam ? "*" : ""}</td>
+            <td class="num">${num2(d.inputs.driverEdge)}</td>
+            <td class="num">${d.inputs.rookie ? "yes" : "–"}</td>
+            <td class="num"><b>${num2(d.inputs.strength)}</b></td>
+            <td class="num prob-pct">${pctLabel(d.title)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    <p class="table-note">Strengths are on the Plackett–Luce scale, centred on the average driver. "Car" is the team's ${T.season} strength
+      (both drivers, weighted by races). "Driver edge" is how much stronger the driver was than their own ${T.season} team.
+      ${D.some((d) => d.inputs.newTeam) ? "* A brand-new team is placed level with the slowest existing team." : ""}</p>
+
+    <h2 class="section-title" id="pr-backtest">Track record: testing on ${btFirst}–${btLast}</h2>
+    <p class="prose">Before trusting it with ${P.season}, the whole method was replayed on every season from ${btFirst} to ${btLast},
+      each time learning only from the seasons before (a <b>walk-forward backtest</b>). It's compared with the simplest guess,
+      <b>"last year repeats"</b>, and with the same model minus its winter surprise.</p>
+    <div class="table-wrap">
+      <table class="grid">
+        <thead><tr>
+          <th>Method</th><th class="num">P(actual champion)</th><th class="num">Champion log score</th>
+          <th class="num">80% range coverage</th><th class="num">Order correlation</th>
+        </tr></thead>
+        <tbody>${["repeat", "noSurprise", "model"].map((k) => `
+          <tr${k === "model" ? ' class="is-used"' : ""}>
+            <td>${k === "model" ? `<b>${METHOD_LABELS[k]}</b>` : METHOD_LABELS[k]}</td>
+            <td class="num">${pctInt(sm[k].p)}</td>
+            <td class="num">${num2(sm[k].logScore)}</td>
+            <td class="num"><b>${pctInt(sm[k].coverage)}</b></td>
+            <td class="num">${sm[k].orderCorr.toFixed(2)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    <p class="table-note"><b>P(actual champion)</b>: the average probability given in advance to the driver who went on to win.
+      <b>Log score</b>: the log of that probability (closer to 0 is better; it punishes confident misses).
+      <b>Coverage</b>: the share of drivers whose real points landed inside their predicted 80% range, which should be close to 80%.
+      <b>Order correlation</b>: how well expected points ranked the whole field (1 = perfect).</p>
+    <p class="prose">The two confident versions give the eventual champion a higher probability, because ${btFirst}–${btLast} was mostly won
+      by one dominant car at a time. But only <b>${pctInt(sm.repeat.coverage)}</b> of drivers finished inside their predicted 80% range:
+      those forecasts were overconfident. The full model's ranges held <b>${pctInt(sm.model.coverage)}</b>, close to the 80% target,
+      so it's the version used for ${P.season}. All three rank the field equally well.</p>
+    <div class="table-wrap">
+      <table class="grid compact">
+        <thead><tr><th>Season</th><th>Champion</th>${["repeat", "noSurprise", "model"].map((k) => `<th class="num">${METHOD_LABELS[k].replace(" (used here)", "")}</th>`).join("")}</tr></thead>
+        <tbody>${B.seasons.map((s) => `
+          <tr>
+            <td class="mono">${s.season}</td><td>${esc(s.champion)}</td>
+            ${["repeat", "noSurprise", "model"].map((k) => `<td class="num" title="Favourite: ${esc(s[k].favourite)}">${pctLabel(s[k].p)}</td>`).join("")}
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    <p class="table-note">The title chance each method gave the eventual champion before the season. Hover a cell for that method's favourite.</p>
+
+    <h2 class="section-title" id="pr-limits">Limitations</h2>
+    <ul class="limits">
+      ${provisional ? `<li><b>${T.season} isn't finished.</b> The prediction uses ${T.round} of ${T.roundsInSeason} rounds and is regenerated as results come in.</li>` : ""}
+      <li><b>Line-ups:</b> every driver is assumed to stay with their team from the latest race${changes ? `, apart from ${changes} change${changes === 1 ? "" : "s"} entered by hand` : ""}. Announced moves aren't otherwise included.</li>
+      <li><b>Calendar:</b> ${S.races} races are assumed. Sprint races and their points aren't modelled.</li>
+      <li><b>Reliability:</b> every car gets the same ${pctInt(S.dnfRate)} chance of retiring from each race.</li>
+      <li><b>Development:</b> after the winter surprise, a car's strength stays fixed for the whole simulated season.</li>
+      <li><b>Rules:</b> the model knows nothing about regulation changes. In a second year of the same rules the field usually closes up, which it can't anticipate.</li>
+      ${M.missingSeasons.length ? `<li><b>Missing data:</b> ${M.missingSeasons.join(", ")} results aren't in the training data.</li>` : ""}
+      <li><b>A probability, not a pick:</b> even the favourite, at ${pctLabel(fav.title)}, fails to win the title in most simulated seasons.</li>
+    </ul>
+
+    <div class="pipeline">
+      <span>Pipeline:</span>
+      <span class="chip">Jolpica F1 API + Ergast archive</span>
+      <span class="chip">SQLite data warehouse</span>
+      <span class="chip">Plackett–Luce · NumPy/SciPy</span>
+      <span class="chip">${sims} Monte Carlo seasons</span>
+      <span>generated <b>${generated}</b> by <b>ml/predict_next_season.py</b></span>
+    </div>
+  `;
+
+  $("#prRange").innerHTML = rangeList(D);
+  view.querySelectorAll(".range-row[data-i]").forEach((row) => {
+    const d = D[Number(row.dataset.i)];
+    const html = `<b>${esc(d.name)}</b><br>Expected <span class="tv">${Math.round(d.mean)} pts</span><br>
+      Middle half <span class="tv">${d.p25}–${d.p75}</span> · 80% <span class="tv">${d.p10}–${d.p90}</span><br>Title <span class="tv">${pctLabel(d.title)}</span>`;
+    row.addEventListener("mousemove", (e) => showTip(html, e));
+    row.addEventListener("mouseleave", hideTip);
+  });
+  drawCarryover($("#prCarry"), P.carryover, co);
+
+  const calcSel = $("#calcDriver");
+  const paintCalc = () => { $("#calcBody").innerHTML = calcHTML(D.find((d) => d.id === calcSel.value) || fav, P); };
+  calcSel.addEventListener("change", paintCalc);
+  paintCalc();
+
+  const smooth = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+  view.querySelectorAll("[data-jump]").forEach((b) => b.addEventListener("click", () =>
+    document.getElementById(b.dataset.jump)?.scrollIntoView({ behavior: smooth, block: "start" })));
+}
+
+/* horizontal probability bars, scaled to the largest value */
+function probBars(items, label, team) {
+  const max = Math.max(...items.map((d) => d.title), 1e-9);
+  return items.map((d) => `
+    <div class="bar-row">
+      <span class="bar-row__label">${esc(label(d))}</span>
+      <span class="bar-row__track"><span class="bar-row__fill" style="width:${Math.max(1, (d.title / max) * 100)}%;--bc:${teamColor(team(d))}"></span></span>
+      <span class="bar-row__val prob-pct">${pctLabel(d.title)}</span>
+    </div>`).join("");
+}
+
+/* points range per driver: 80% bar, middle-half bar and the expected value */
+function rangeList(drivers) {
+  const maxV = Math.max(...drivers.map((d) => d.p90), 10);
+  const step = niceStep(maxV / 5), top = Math.ceil(maxV / step) * step;
+  const x = (v) => (v / top) * 100;
+  let ticks = "";
+  for (let v = 0; v <= top + 0.1; v += step) ticks += `<span style="left:${x(v)}%">${v}</span>`;
+  return `<div class="range-list">${drivers.map((d, i) => `
+    <div class="range-row" data-i="${i}" style="--team:${teamColor(d.team)}">
+      <span class="bar-row__label">${esc(d.code)} · ${esc(lastName(d.name))}</span>
+      <span class="range-track">
+        <i class="range-80" style="left:${x(d.p10)}%;width:${x(d.p90) - x(d.p10)}%"></i>
+        <i class="range-50" style="left:${x(d.p25)}%;width:${x(d.p75) - x(d.p25)}%"></i>
+        <i class="range-dot" style="left:${x(d.mean)}%"></i>
+      </span>
+      <span class="bar-row__val">${Math.round(d.mean)}</span>
+    </div>`).join("")}
+    <div class="range-row range-axis" aria-hidden="true"><span></span><span class="range-ticks">${ticks}</span><span></span></div>
+  </div>`;
+}
+
+/* driver × final position probabilities, shaded in team colour */
+function positionHeat(drivers, n) {
+  const top = drivers.slice(0, n);
+  const max = Math.max(...top.flatMap((d) => d.positions.slice(0, n)), 1e-9);
+  return `<table class="grid heat">
+    <thead><tr><th>Driver</th>${Array.from({ length: n }, (_, i) => `<th class="num">P${i + 1}</th>`).join("")}</tr></thead>
+    <tbody>${top.map((d) => `
+      <tr style="--team:${teamColor(d.team)}">
+        <td><span class="team-tag"><i class="bar"></i>${esc(d.name)}</span></td>
+        ${d.positions.slice(0, n).map((p) => `<td class="hc" style="background:color-mix(in srgb, var(--team) ${Math.round((p / max) * 60)}%, transparent)">${p >= 0.005 ? Math.round(p * 100) + "%" : ""}</td>`).join("")}
+      </tr>`).join("")}
+    </tbody>
+  </table>`;
+}
+
+/* the worked example for one driver */
+function calcHTML(d, P) {
+  const co = P.model.coefficients, i = d.inputs, T = P.dataThrough;
+  const parts = [
+    ["", "", num2(co.intercept), "baseline"],
+    ["+", `${num2(co.team_prev)} × ${num2(i.teamPrev)}`, signed2(co.team_prev * i.teamPrev),
+      `car: ${esc(shortTeam(d.team))}'s ${T.season} strength${i.newTeam ? " (new team, so level with the slowest)" : ""}`],
+    ["+", `${num2(co.driver_edge)} × ${num2(i.driverEdge)}`, signed2(co.driver_edge * i.driverEdge),
+      i.rookie ? "driver: no previous season, so 0" : `driver: edge over their ${T.season} teammate`],
+    ["+", `${num2(co.rookie)} × ${i.rookie ? 1 : 0}`, signed2(co.rookie * (i.rookie ? 1 : 0)), `rookie: ${i.rookie ? "yes" : "no"}`],
+  ];
+  return `
+    <table class="calc"><tbody>
+      ${parts.map(([op, expr, val, what]) => `<tr><td class="op">${op}</td><td class="expr">${expr}</td><td class="val">${val}</td><td class="what">${what}</td></tr>`).join("")}
+      <tr class="total"><td class="op">=</td><td class="expr"></td><td class="val">${num2(i.strength)}</td><td class="what">predicted ${P.season} strength</td></tr>
+    </tbody></table>
+    <p class="calc-after">Then, in each of the ${P.settings.simulations.toLocaleString()} simulated seasons, the car moves by a random amount
+      (typically ±${P.model.sigmaTeam.toFixed(2)}) and the driver by ±${P.model.sigmaDriver.toFixed(2)} before ${P.settings.races} races are run.
+      Result for ${esc(d.name)}: <b>title in ${pctLabel(d.title)}</b> of seasons, <b>${Math.round(d.mean)} points</b> expected
+      (80% range ${d.p10}–${d.p90}).</p>`;
+}
+
+/* scatter: team strength last season vs this season, with the learned line */
+function drawCarryover(host, pts, co) {
+  const W = 460, H = 300, m = { t: 12, r: 14, b: 34, l: 34 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const all = pts.flatMap((p) => [p.lastYear, p.thisYear]);
+  const lo = Math.floor(Math.min(...all)), hi = Math.ceil(Math.max(...all));
+  const x = (v) => m.l + ((v - lo) / (hi - lo)) * iw;
+  const y = (v) => m.t + ih - ((v - lo) / (hi - lo)) * ih;
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Team strength last season against this season" });
+
+  for (let v = lo; v <= hi; v++) {
+    svg.appendChild(svgEl("line", { class: "grid-line", x1: m.l, y1: y(v), x2: W - m.r, y2: y(v) }));
+    svg.appendChild(svgEl("line", { class: "grid-line", x1: x(v), y1: m.t, x2: x(v), y2: m.t + ih }));
+    const ty = svgEl("text", { x: m.l - 6, y: y(v) + 3, "text-anchor": "end" }); ty.textContent = v; svg.appendChild(ty);
+    const tx = svgEl("text", { x: x(v), y: m.t + ih + 14, "text-anchor": "middle" }); tx.textContent = v; svg.appendChild(tx);
+  }
+  const xl = svgEl("text", { x: m.l + iw / 2, y: H - 4, "text-anchor": "middle" }); xl.textContent = "team strength last season"; svg.appendChild(xl);
+  const yl = svgEl("text", { x: 0, y: 0, "text-anchor": "middle", transform: `translate(9 ${m.t + ih / 2}) rotate(-90)` });
+  yl.textContent = "this season"; svg.appendChild(yl);
+
+  svg.appendChild(svgEl("line", { x1: x(lo), y1: y(lo), x2: x(hi), y2: y(hi), stroke: "var(--faint)", "stroke-width": 1.2, "stroke-dasharray": "5 4" }));
+  const f = (v) => co.intercept + co.team_prev * v;
+  pts.forEach((p) => {
+    svg.appendChild(svgEl("circle", { cx: x(p.lastYear), cy: y(p.thisYear), r: 3.6, fill: "var(--s1)", opacity: .7 }));
+  });
+  svg.appendChild(svgEl("line", { x1: x(lo), y1: y(f(lo)), x2: x(hi), y2: y(f(hi)), stroke: "var(--accent)", "stroke-width": 2.2, "stroke-linecap": "round" }));
+  pts.forEach((p) => {
+    const hit = svgEl("circle", { cx: x(p.lastYear), cy: y(p.thisYear), r: 8, fill: "transparent" });
+    const html = `<b>${esc(shortTeam(p.team))} ${p.season}</b><br>Last season <span class="tv">${num2(p.lastYear)}</span> → <span class="tv">${num2(p.thisYear)}</span>`;
+    hit.addEventListener("mousemove", (e) => showTip(html, e));
+    hit.addEventListener("mouseleave", hideTip);
+    svg.appendChild(hit);
+  });
+  host.appendChild(svg);
+}
+
+/* ============================================================
    Sidebar: driver dropdown
    ============================================================ */
 async function loadSidebarDrivers() {
@@ -1531,6 +1969,7 @@ function router() {
   else if (hash.startsWith("#/season")) { setActiveNav("season"); setActiveDriver(null); renderSeason(); }
   else if (hash.startsWith("#/standings")) { setActiveNav("standings"); setActiveDriver(null); renderStandings(); }
   else if (hash.startsWith("#/forecast")) { setActiveNav("forecast"); setActiveDriver(null); renderForecast(); }
+  else if (hash.startsWith("#/prediction")) { setActiveNav("prediction"); setActiveDriver(null); renderPrediction(); }
   else { setActiveNav("latest"); setActiveDriver(null); renderLatest(); }
   view.focus({ preventScroll: true });
 }

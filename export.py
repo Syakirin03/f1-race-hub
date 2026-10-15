@@ -64,6 +64,13 @@ def main() -> int:
     DIST.mkdir()
     for name in SITE_FILES:
         shutil.copy2(ROOT / name, DIST / name)
+    # the next-season prediction is computed offline (ml/predict_next_season.py) and committed
+    prediction = server.PREDICTIONS / "next-season.json"
+    if prediction.exists():
+        (DIST / "predictions").mkdir()
+        shutil.copy2(prediction, DIST / "predictions" / prediction.name)
+    else:
+        print("note: predictions/next-season.json not found, so the prediction page will say it's unavailable")
 
     total = 0
     for p in paths:

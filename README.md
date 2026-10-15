@@ -21,6 +21,11 @@ open any driver's season data (stats + charts).
   (5,000 simulated seasons, resampling each driver's own per-race points over the
   remaining rounds): title probabilities, projected final points with a P10–P90
   range, and a mathematical "title clinched / still open" check.
+- **2027 Prediction** — a machine-learning forecast of next season's championship:
+  title chances, predicted points ranges and final-position probabilities, plus
+  a plain-English explanation of the model, the calculation for every driver,
+  its backtest on 2016–2024 and its limitations. See
+  [Next-season prediction](#next-season-prediction).
 - **Drivers** (sidebar dropdown) — pick a driver for their season stats, a
   grid-vs-finish chart, a points-progression chart (with a dashed season-end
   projection), and a race-by-race table.
@@ -131,6 +136,28 @@ Good to know:
   **Enable workflow** on the Actions tab when the new season starts.
 - Any static host works with `dist/`: Cloudflare Pages, Netlify, an S3 bucket.
 
+## Next-season prediction
+
+The **2027 Prediction** page reads one file, `predictions/next-season.json`. It's
+computed **offline**, because it needs the historical results in the data
+warehouse (`data/warehouse.db`, built from the CSV archive in `data/`, which
+isn't committed). GitHub Actions can't rebuild it, so the file is committed and
+published as it is.
+
+To refresh it (for example after each remaining race, and once the season ends):
+
+```
+python ingest.py                          # latest results into data/f1.db
+python warehouse/build_warehouse.py       # rebuild the warehouse
+python ml/predict_next_season.py          # writes predictions/next-season.json
+git add predictions/next-season.json && git commit -m "Update 2027 prediction" && git push
+```
+
+`ml/predict_next_season.py` needs numpy, pandas and scipy, and takes a few seconds.
+Edit `N_RACES` or `LINEUP_CHANGES` at the top of it when the 2027 calendar or
+driver moves are announced. The method is explained step by step in
+`ml/02_season_2027.ipynb`.
+
 ## Data source
 
 [Jolpica F1 API](https://github.com/jolpica/jolpica-f1), the community-maintained
@@ -150,5 +177,8 @@ successor to the Ergast API (`https://api.jolpi.ca/ergast/f1`). It's used by
 | `db/schema.sql` | Tables, indexes and analysis views |
 | `.github/workflows/deploy.yml` | Daily sync, build and deploy to GitHub Pages |
 | `data/f1.db` | The SQLite database (created by `ingest.py`, not committed) |
+| `ml/predict_next_season.py` | Computes the next-season prediction from the warehouse |
+| `predictions/next-season.json` | The published prediction (committed) |
 
-No build step and no third-party dependencies.
+No build step. The website itself has no third-party dependencies; only the
+offline prediction script uses numpy, pandas and scipy.
