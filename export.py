@@ -15,6 +15,7 @@ holding every row (static hosts ignore ?limit= and ?offset=).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import sys
@@ -37,6 +38,23 @@ def write_json(rel: str, obj) -> int:
     data = json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     path.write_bytes(data)
     return len(data)
+
+
+def fingerprint_assets() -> None:
+    """Point index.html at styles.css?v=<hash> and app.js?v=<hash>.
+
+    Hosts like GitHub Pages let browsers cache files for a while, so right after
+    a deploy a visitor could get the new page with the old script. A link that
+    changes whenever the file changes always fetches the matching version.
+    """
+    page = DIST / "index.html"
+    html = page.read_text(encoding="utf-8")
+    for name in ("styles.css", "app.js"):
+        digest = hashlib.sha256((DIST / name).read_bytes()).hexdigest()[:10]
+        if html.count(f'"{name}"') != 1:
+            raise RuntimeError(f"index.html should reference {name} exactly once")
+        html = html.replace(f'"{name}"', f'"{name}?v={digest}"')
+    page.write_text(html, encoding="utf-8")
 
 
 def main() -> int:
@@ -64,6 +82,7 @@ def main() -> int:
     DIST.mkdir()
     for name in SITE_FILES:
         shutil.copy2(ROOT / name, DIST / name)
+    fingerprint_assets()
     # the next-season prediction is computed offline (ml/predict_next_season.py) and committed
     prediction = server.PREDICTIONS / "next-season.json"
     if prediction.exists():
