@@ -104,30 +104,6 @@ no server to run or patch, and HTTPS and a global CDN come free. A GitHub Action
 workflow (`.github/workflows/deploy.yml`) refreshes it every day at 06:17 UTC:
 `ingest.py` → `export.py` → GitHub Pages.
 
-One-time setup:
-
-1. Create a **public** repository on GitHub, for example `f1-race-hub`. Free
-   GitHub Pages needs a public repo; private repos need a paid plan.
-2. Push this folder to it:
-   ```
-   git init -b main
-   git add .
-   git commit -m "F1 Race Hub"
-   git remote add origin https://github.com/<your-username>/f1-race-hub.git
-   git push -u origin main
-   ```
-3. In the repo, open **Settings → Pages** and set **Source** to **GitHub Actions**.
-4. Open **Actions → Update data and deploy → Run workflow**. The first run
-   downloads the whole season (about 5 minutes); later runs take under a minute.
-5. The site is live at `https://<your-username>.github.io/f1-race-hub/`.
-
-Optional custom domain: **Settings → Pages → Custom domain**, then add the DNS
-record GitHub shows you (a `CNAME` pointing at `<your-username>.github.io`) and
-tick **Enforce HTTPS**.
-
-Preview the production build locally with
-`python export.py` then `python -m http.server -d dist 8080`.
-
 Good to know:
 - If a run fails (for example the API is down), the previous version stays live
   and GitHub emails you. Re-run it from the Actions tab.
