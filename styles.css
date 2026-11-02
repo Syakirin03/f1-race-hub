@@ -178,7 +178,7 @@ button, select, input { font: inherit; color: inherit; }
 }
 .legal a { text-decoration: underline; text-underline-offset: 2px; }
 
-/* ---- Wallpaper (Settings): the image behind translucent, blurred panels ---- */
+/* ---- Wallpaper (Settings): the image behind translucent panels, optionally blurred ---- */
 :root[data-wallpaper] body::before {
   content: ""; position: fixed; inset: 0; z-index: -1;
   background: var(--wallpaper) center / cover no-repeat;
@@ -188,7 +188,7 @@ button, select, input { font: inherit; color: inherit; }
 :root[data-wallpaper] .legal,
 :root[data-wallpaper] .topbar {
   background: color-mix(in srgb, var(--bg) var(--panel, 85%), transparent);
-  -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(var(--blur, 0px)); backdrop-filter: blur(var(--blur, 0px));
 }
 :root[data-wallpaper] .sidebar { border-right-color: transparent; }
 :root[data-wallpaper] .legal { border-top-color: transparent; }

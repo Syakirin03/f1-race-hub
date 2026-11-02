@@ -38,7 +38,7 @@ open any driver's season data (stats + charts).
   projection), and a race-by-race table.
 - **Settings** (sidebar) — background (match system, light, dim, black, any custom
   colour, or an uploaded wallpaper image behind see-through panels with adjustable
-  opacity) and accent colour, saved in the browser. Responsive layout, F1 team colours.
+  opacity and blur) and accent colour, saved in the browser. Responsive layout, F1 team colours.
 
 ### Declaring the champion
 

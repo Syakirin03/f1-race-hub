@@ -43,10 +43,12 @@
         root.setAttribute("data-wallpaper", "");
         root.style.setProperty("--wallpaper", 'url("' + wall + '")');
         root.style.setProperty("--panel", Math.min(100, Math.max(30, Number(s.panel) || 85)) + "%");
+        root.style.setProperty("--blur", Math.min(30, Math.max(0, Number(s.blur) || 0)) + "px");   // 0 = sharp
       } else {
         root.removeAttribute("data-wallpaper");
         root.style.removeProperty("--wallpaper");
         root.style.removeProperty("--panel");
+        root.style.removeProperty("--blur");
       }
       if (wall) {
         root.setAttribute("data-theme", s.wallpaperTone === "light" ? "light" : "dark");   // picked from the image's brightness
@@ -177,10 +179,16 @@
           <input type="file" id="wallpaperFile" accept="image/*" hidden>
           <span class="wallpaper-note" id="wallpaperNote" role="status"></span>
         </div>
-        <label class="panel-range" id="panelRow" hidden>
-          <span>Panel opacity</span>
-          <input type="range" name="panel" min="30" max="100" step="5" value="85">
-        </label>
+        <div id="wallpaperTuning" hidden>
+          <label class="panel-range">
+            <span>Panel opacity</span>
+            <input type="range" name="panel" min="30" max="100" step="5" value="85">
+          </label>
+          <label class="panel-range">
+            <span>Blur</span>
+            <input type="range" name="blur" min="0" max="30" step="2" value="0">
+          </label>
+        </div>
       </fieldset>
 
       <fieldset>

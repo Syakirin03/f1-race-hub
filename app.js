@@ -2555,7 +2555,7 @@ let display = readDisplay();
 function formDisplay() {
   const f = settingsForm.elements;
   return { ...display, background: f.background.value || "system", custom: f.custom.value,
-           accent: f.accent.value, panel: Number(f.panel.value) };
+           accent: f.accent.value, panel: Number(f.panel.value), blur: Number(f.blur.value) };
 }
 function fillSettings(s) {
   const f = settingsForm.elements;
@@ -2563,6 +2563,7 @@ function fillSettings(s) {
   if (/^#[0-9a-f]{6}$/i.test(s.custom || "")) f.custom.value = s.custom;
   f.accent.value = s.accent || f.accent[0].value;   // the first swatch is the default
   f.panel.value = s.panel || 85;
+  f.blur.value = s.blur || 0;
   paintCustomOption();
   paintWallpaperOption();
 }
@@ -2579,7 +2580,7 @@ function paintWallpaperOption() {
   opt.classList.toggle("has-image", !!url);
   $("#wallpaperPick").textContent = url ? "Change image…" : "Upload image…";
   $("#wallpaperRemove").hidden = !url;
-  $("#panelRow").hidden = !url || settingsForm.elements.background.value !== "wallpaper";
+  $("#wallpaperTuning").hidden = !url || settingsForm.elements.background.value !== "wallpaper";
 }
 function wallpaperNote(msg) { $("#wallpaperNote").textContent = msg; }
 function saveDisplay(s) {
@@ -2631,6 +2632,7 @@ settingsForm.elements.custom.addEventListener("input", () => {
   saveDisplay(formDisplay());
 });
 settingsForm.elements.panel.addEventListener("input", () => saveDisplay(formDisplay()));
+settingsForm.elements.blur.addEventListener("input", () => saveDisplay(formDisplay()));
 $("#wallpaperPick").addEventListener("click", () => $("#wallpaperFile").click());
 $("#wallpaperFile").addEventListener("change", async (e) => {
   const file = e.target.files[0];
