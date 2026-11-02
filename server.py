@@ -208,10 +208,13 @@ def api_driver_results(db, path, season, rnd, page, driver=None):
 
 
 def api_laps(db, path, season, rnd, page, driver=None):
-    table = {"season": s(season), "round": s(rnd), "Races": []}
-    total = count(db, "SELECT COUNT(*) FROM laps WHERE season = ? AND round = ?", (season, rnd))
-    rows = db.execute("SELECT lap, driver_id, position, time_text FROM laps WHERE season = ? AND round = ? "
-                      "ORDER BY lap, position LIMIT ? OFFSET ?", (season, rnd, *page)).fetchall()
+    table = {"season": s(season), "round": s(rnd), "driverId": driver, "Races": []}
+    where, args = "season = ? AND round = ?", (season, rnd)
+    if driver:   # one driver's laps: /<season>/<round>/drivers/<id>/laps.json
+        where, args = where + " AND driver_id = ?", (*args, driver)
+    total = count(db, f"SELECT COUNT(*) FROM laps WHERE {where}", args)
+    rows = db.execute(f"SELECT lap, driver_id, position, time_text FROM laps WHERE {where} "
+                      "ORDER BY lap, position LIMIT ? OFFSET ?", (*args, *page)).fetchall()
     race = get_race(db, season, rnd) if rows else None
     if race:
         race["Laps"] = [{"number": s(lap), "Timings": [
@@ -283,6 +286,7 @@ ROUTES = [(re.compile(p, re.IGNORECASE), fn) for p, fn in (
     (rf"^{SEASON}/{ROUND}/driverstandings\.json$", api_standings),
     (rf"^{SEASON}/{ROUND}/results\.json$", api_race_results),
     (rf"^{SEASON}/{ROUND}/laps\.json$", api_laps),
+    (rf"^{SEASON}/{ROUND}/drivers/(?P<driver>[A-Za-z0-9_-]+)/laps\.json$", api_laps),
     (rf"^{SEASON}/{ROUND}/pitstops\.json$", api_pitstops),
     (rf"^{SEASON}/{ROUND}/qualifying\.json$", api_qualifying),
     (rf"^{SEASON}/drivers/(?P<driver>[A-Za-z0-9_-]+)/results\.json$", api_driver_results),

@@ -5,11 +5,49 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>F1 Race Hub</title>
   <meta name="description" content="Formula 1 race results, season schedule, championship standings, race analytics, a title forecast and a machine-learning prediction for next season.">
-  <meta name="theme-color" content="#0a0c10">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0c10'/%3E%3Crect x='9' y='6' width='5' height='20' rx='2' fill='%23ff1e02'/%3E%3Crect x='17' y='6' width='7' height='5' rx='2' fill='%23ff1e02'/%3E%3Crect x='17' y='14' width='5' height='4' rx='2' fill='%23ff1e02'/%3E%3C/svg%3E">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23000'/%3E%3Crect x='9' y='6' width='5' height='20' rx='2' fill='%23e10600'/%3E%3Crect x='17' y='6' width='7' height='5' rx='2' fill='%23e10600'/%3E%3Crect x='17' y='14' width='5' height='4' rx='2' fill='%23e10600'/%3E%3C/svg%3E">
+  <script>
+    /* Display settings (background + accent) from the Settings dialog, applied here,
+       before the first paint, so the page never flashes the wrong background.
+       app.js reuses readDisplay() and applyDisplay() when the settings change. */
+    var DISPLAY_KEY = "f1hub-display";
+    var BACKGROUNDS = { light: "#ffffff", dim: "#15202b", dark: "#000000" };
+    function readDisplay() {
+      var s = {};
+      try {
+        s = JSON.parse(localStorage.getItem(DISPLAY_KEY) || "{}") || {};
+        var old = localStorage.getItem("f1hub-theme");   // the earlier light/dark toggle
+        if (!s.background && (old === "light" || old === "dark")) s.background = old;
+      } catch (e) {}
+      return s;
+    }
+    function luma(hex) {   // WCAG relative luminance of #rrggbb
+      var c = [1, 3, 5].map(function (i) {
+        var v = parseInt(hex.substr(i, 2), 16) / 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+      });
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    }
+    function applyDisplay(s) {
+      var root = document.documentElement, isHex = /^#[0-9a-f]{6}$/i;
+      var bg = BACKGROUNDS[s.background] || (s.background === "custom" && isHex.test(s.custom) ? s.custom : null);
+      if (bg) {
+        root.setAttribute("data-theme", luma(bg) > 0.179 ? "light" : "dark");   // dark text on light backgrounds
+        root.style.setProperty("--bg", bg);
+      } else {   // match the system setting
+        root.removeAttribute("data-theme");
+        root.style.removeProperty("--bg");
+      }
+      if (isHex.test(s.accent || "")) {
+        root.style.setProperty("--accent", s.accent);
+        root.style.setProperty("--on-accent", luma(s.accent) > 0.32 ? "#0f1419" : "#ffffff");
+      } else {
+        root.style.removeProperty("--accent");
+        root.style.removeProperty("--on-accent");
+      }
+    }
+    applyDisplay(readDisplay());
+  </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -17,63 +55,60 @@
     <!-- Mobile top bar -->
     <header class="topbar">
       <button class="icon-btn" id="menuToggle" aria-label="Open menu" aria-expanded="false">
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
       <span class="topbar__title">F1 Race Hub</span>
     </header>
 
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
-      <div class="brand">
-        <span class="brand__mark" aria-hidden="true"></span>
-        <span class="brand__text">F1 <strong>Race Hub</strong></span>
-        <span class="brand__season" id="brandSeason">2026</span>
-      </div>
+      <a class="brand" href="#/latest">F1 Race Hub <span class="brand__season" id="brandSeason"></span></a>
 
       <nav class="nav" aria-label="Sections">
         <a class="nav__link" data-route="latest" href="#/latest">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5L20 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".35"/></svg>
-          Latest Race
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Latest race</span>
         </a>
         <a class="nav__link" data-route="season" href="#/season">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 9h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-          Season
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Season</span>
         </a>
         <a class="nav__link" data-route="standings" href="#/standings">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10M12 20V4M19 20v-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          Standings
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V4M19 20v-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Standings</span>
+        </a>
+        <a class="nav__link" data-route="champion" href="#/champion" id="champLink" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0V4zM8 6H5v1a3.5 3.5 0 0 0 3.4 3.5M16 6h3v1a3.5 3.5 0 0 1-3.4 3.5M12 13v4M8.5 20h7M10 17h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span id="champLabel">Champion</span>
         </a>
         <a class="nav__link" data-route="dashboard" href="#/dashboard">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="9" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13.5" y="3.5" width="7" height="5" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="3.5" y="15.5" width="7" height="5" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13.5" y="11.5" width="7" height="9" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
-          Race Analytics
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M7 15l3-4 3 2 4-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Race analytics</span>
         </a>
         <a class="nav__link" data-route="forecast" href="#/forecast">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-5 4 4 8-8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 8h5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Title Forecast
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-5 4 4 8-8M15 8h5v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Title forecast</span>
         </a>
         <a class="nav__link" data-route="prediction" href="#/prediction">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18l4-5 4 3 3-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M15.5 10.5L20 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="1.5 3"/><circle cx="20.5" cy="5.5" r="1.8" fill="currentColor"/></svg>
-          2027 Prediction
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>2027 prediction</span>
         </a>
       </nav>
 
       <div class="nav-group">
-        <div class="nav-group__head">
-          <span>Drivers</span>
-          <span class="nav-group__hint">pick a driver</span>
-        </div>
-        <label class="driver-select-wrap" for="driverSelect">
-          <select id="driverSelect" class="driver-select" aria-label="Choose a driver">
+        <label class="nav-group__head" for="driverSelect">Drivers</label>
+        <div class="driver-select-wrap">
+          <select id="driverSelect" class="driver-select">
             <option value="">Loading drivers…</option>
           </select>
           <svg class="driver-select-wrap__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </label>
+        </div>
       </div>
 
       <div class="sidebar__foot">
-        <button class="theme-btn" id="themeToggle" aria-label="Toggle colour theme">
-          <span class="theme-btn__icon" aria-hidden="true"></span>
-          <span class="theme-btn__label">Theme</span>
+        <button class="nav__link" id="settingsOpen" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+          <span>Settings</span>
         </button>
         <span class="sidebar__src" id="dataSource">Connecting…</span>
       </div>
@@ -94,6 +129,48 @@
       </footer>
     </div>
   </div>
+
+  <dialog class="settings" id="settings" aria-labelledby="settingsTitle">
+    <form method="dialog" id="settingsForm">
+      <div class="settings__head">
+        <h2 id="settingsTitle">Display</h2>
+        <button class="icon-btn" value="close" aria-label="Close settings">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <p class="settings__intro">Changes apply straight away and are saved in this browser.</p>
+
+      <fieldset>
+        <legend>Background</legend>
+        <div class="bg-options">
+          <label class="bg-option bg-option--system"><input type="radio" name="background" value="system"><span>Match system</span></label>
+          <label class="bg-option bg-option--light"><input type="radio" name="background" value="light"><span>Light</span></label>
+          <label class="bg-option bg-option--dim"><input type="radio" name="background" value="dim"><span>Dim</span></label>
+          <label class="bg-option bg-option--dark"><input type="radio" name="background" value="dark"><span>Black</span></label>
+          <label class="bg-option bg-option--custom"><input type="radio" name="background" value="custom"><span>Custom</span>
+            <input type="color" name="custom" value="#1c2621" aria-label="Custom background colour"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Accent colour</legend>
+        <div class="accent-options">
+          <label class="swatch" style="--sw:#e10600" title="Red"><input type="radio" name="accent" value="#e10600" aria-label="Red"></label>
+          <label class="swatch" style="--sw:#1d9bf0" title="Blue"><input type="radio" name="accent" value="#1d9bf0" aria-label="Blue"></label>
+          <label class="swatch" style="--sw:#ffd400" title="Yellow"><input type="radio" name="accent" value="#ffd400" aria-label="Yellow"></label>
+          <label class="swatch" style="--sw:#f91880" title="Pink"><input type="radio" name="accent" value="#f91880" aria-label="Pink"></label>
+          <label class="swatch" style="--sw:#7856ff" title="Purple"><input type="radio" name="accent" value="#7856ff" aria-label="Purple"></label>
+          <label class="swatch" style="--sw:#ff7a00" title="Orange"><input type="radio" name="accent" value="#ff7a00" aria-label="Orange"></label>
+          <label class="swatch" style="--sw:#00ba7c" title="Green"><input type="radio" name="accent" value="#00ba7c" aria-label="Green"></label>
+        </div>
+      </fieldset>
+
+      <div class="settings__foot">
+        <button type="button" class="btn" id="settingsReset">Reset</button>
+        <button class="btn btn--primary" value="close">Done</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="app.js"></script>
 </body>

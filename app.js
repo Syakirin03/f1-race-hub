@@ -13,6 +13,12 @@ let PAGE = 100;                // the live API's page size; our own data returns
 let DATA = { mode: "live" };   // live | local (server.py + SQLite) | static (published export)
 const TODAY = new Date();
 
+/* The drivers' champion. Set `confirmed` once the title is mathematically decided:
+   the "<season> Champion" page and its sidebar link appear only while this is true,
+   and only for this season, so they hide themselves when the next season starts.
+   The champion is whoever leads the standings. */
+const CHAMPION = { season: "2026", confirmed: true };
+
 /* ---- tiny request cache so navigation stays snappy & kind to rate limits ---- */
 const cache = new Map();
 async function getJSON(path) {
@@ -70,7 +76,7 @@ async function detectDataSource() {
 function sourceName() { return DATA.mode === "local" ? "local SQLite DB" : "Jolpica&nbsp;F1"; }
 
 /* ============================================================
-   Reference data: team colours + nationality flags
+   Reference data: team colours
    ============================================================ */
 const TEAM_COLORS = {
   "Red Bull": "#4781d7",
@@ -90,33 +96,6 @@ const TEAM_COLORS = {
   "AlphaTauri": "#6c98ff",
 };
 function teamColor(name) { return TEAM_COLORS[name] || "#7c8694"; }
-
-const NAT_TO_ISO = {
-  Dutch: "NL", British: "GB", English: "GB", German: "DE", Spanish: "ES",
-  Italian: "IT", Monegasque: "MC", Australian: "AU", French: "FR", Finnish: "FI",
-  Canadian: "CA", Mexican: "MX", Japanese: "JP", Thai: "TH", Argentine: "AR",
-  Argentinian: "AR", Brazilian: "BR", "New Zealander": "NZ", Danish: "DK",
-  American: "US", Chinese: "CN", Austrian: "AT", Belgian: "BE", Swiss: "CH",
-  Russian: "RU", Swedish: "SE", Polish: "PL", Portuguese: "PT", Irish: "IE",
-  Colombian: "CO", Venezuelan: "VE", Indonesian: "ID", "South African": "ZA",
-};
-function isoToFlag(iso) {
-  if (!iso) return "🏁";
-  return iso.replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
-}
-function flag(nationality) { return isoToFlag(NAT_TO_ISO[nationality]); }
-
-/* Circuit country name -> ISO, for the race banner / season flags */
-const COUNTRY_ISO = {
-  Australia: "AU", China: "CN", Japan: "JP", USA: "US", "United States": "US",
-  Canada: "CA", Monaco: "MC", Spain: "ES", Austria: "AT", UK: "GB",
-  "United Kingdom": "GB", Belgium: "BE", Hungary: "HU", Netherlands: "NL",
-  Italy: "IT", Azerbaijan: "AZ", Singapore: "SG", Mexico: "MX", Brazil: "BR",
-  Qatar: "QA", UAE: "AE", "United Arab Emirates": "AE", Bahrain: "BH",
-  "Saudi Arabia": "SA", Malaysia: "MY", France: "FR", Germany: "DE",
-  Portugal: "PT", Turkey: "TR", Russia: "RU", "South Africa": "ZA",
-};
-function countryFlag(country) { return isoToFlag(COUNTRY_ISO[country]); }
 
 /* ============================================================
    Small helpers
@@ -184,7 +163,6 @@ function resultsTable(results) {
         <td class="pos-cell ${posClass}">${esc(r.positionText)}</td>
         <td>
           <span class="driver-cell">
-            <span class="flag">${flag(d.nationality)}</span>
             <a href="#/driver/${encodeURIComponent(d.driverId)}">${esc(fullName(d))}</a>
             <span class="code">${esc(d.code || "")}</span>
           </span>
@@ -210,23 +188,14 @@ function resultsTable(results) {
     </div>`;
 }
 
-function raceBanner(race) {
+function raceBanner(race, label = "Round") {
   const loc = race.Circuit.Location;
   return `
-    <div class="race-banner">
-      <div class="race-banner__round">
-        <span class="rnum">${esc(race.round)}</span>
-        <span class="rlab">Round</span>
-      </div>
-      <div>
-        <h1><span class="race-banner__flag">${countryFlag(loc.country)}</span> ${esc(race.raceName)}</h1>
-        <div class="meta">
-          <span><b>${esc(race.Circuit.circuitName)}</b></span>
-          <span>${esc(loc.locality)}, ${esc(loc.country)}</span>
-          <span>${fmtDate(race.date)}</span>
-        </div>
-      </div>
-    </div>`;
+    <header class="page-head">
+      <p class="eyebrow">${esc(label)} ${esc(race.round)} · ${fmtDate(race.date)}</p>
+      <h1>${esc(race.raceName)}</h1>
+      <p class="sub">${esc(race.Circuit.circuitName)}, ${esc(loc.locality)}, ${esc(loc.country)}</p>
+    </header>`;
 }
 
 /* ============================================================
@@ -243,28 +212,24 @@ async function renderLatest() {
     const placeLabel = ["Winner", "2nd", "3rd"];
 
     const podiumHTML = podium.map((r, i) => {
-      const team = r.Constructor.name, pc = teamColor(team);
+      const team = r.Constructor.name;
       return `
-        <article class="podium__card" style="--pc:${pc}" data-pos="${i + 1}">
+        <article class="podium__card" style="--team:${teamColor(team)}">
           <div class="podium__place">${placeLabel[i]}</div>
-          <div class="podium__name">${esc(fullName(r.Driver))}</div>
-          <div class="podium__team"><span class="dot"></span>${esc(team)}</div>
+          <a class="podium__name" href="#/driver/${encodeURIComponent(r.Driver.driverId)}">${esc(fullName(r.Driver))}</a>
+          <div class="podium__team"><i class="bar"></i>${esc(team)}</div>
           <div class="podium__stat">
-            <div><span class="k">Time / Gap</span><span class="v">${esc(r.Time ? r.Time.time : r.status)}</span></div>
-            <div><span class="k">Points</span><span class="v">+${esc(r.points)}</span></div>
+            <span>${esc(r.Time ? r.Time.time : r.status)}</span>
+            <span>${esc(r.points)} pts</span>
           </div>
         </article>`;
     }).join("");
 
     view.innerHTML = `
-      <div class="page-head" style="margin-bottom:14px">
-        <span class="eyebrow">Latest Grand Prix · Round ${esc(race.round)}</span>
-      </div>
-      ${raceBanner(race)}
+      ${raceBanner(race, "Latest race · Round")}
       <div class="podium">${podiumHTML}</div>
-      <h2 class="section-title">Full classification</h2>
+      <h2 class="section-title">Classification</h2>
       ${resultsTable(results)}
-      <p class="empty-note" style="font-size:13px">Tip: click any driver's name to open their season data.</p>
     `;
   } catch (err) { showError(err); }
 }
@@ -288,33 +253,28 @@ async function renderSeason() {
       const isNext = Number(r.round) === lastRound + 1;
       const loc = r.Circuit.Location;
       const pill = done
-        ? `<span class="pill result">Results ›</span>`
-        : isNext ? `<span class="pill next">Up next</span>`
-                 : `<span class="pill soon">Scheduled</span>`;
+        ? `<span class="pill result">Results</span>`
+        : isNext ? `<span class="pill next">Next</span>` : "";
       const tag = done ? "button" : "div";
       const attrs = done
         ? `class="race-cell done" data-round="${esc(r.round)}"`
-        : `class="race-cell upcoming"`;
+        : `class="race-cell upcoming${isNext ? " is-next" : ""}"`;
       return `
         <${tag} ${attrs}>
           <div class="race-cell__top">
-            <span class="race-cell__round">R${esc(r.round)}</span>
-            <span class="race-cell__flag">${countryFlag(loc.country)}</span>
-          </div>
-          <div class="race-cell__name">${esc(r.raceName.replace(/ Grand Prix$/, " GP"))}</div>
-          <div class="race-cell__circuit">${esc(r.Circuit.circuitName)}</div>
-          <div class="race-cell__foot">
-            <span class="race-cell__date">${fmtDate(r.date)}</span>
+            <span class="race-cell__round">Round ${esc(r.round)}</span>
             ${pill}
           </div>
+          <div class="race-cell__name">${esc(r.raceName.replace(/ Grand Prix$/, " GP"))}</div>
+          <div class="race-cell__circuit">${esc(loc.locality)}, ${esc(loc.country)}</div>
+          <div class="race-cell__date">${fmtDate(r.date)}</div>
         </${tag}>`;
     }).join("");
 
     view.innerHTML = `
       <div class="page-head">
-        <span class="eyebrow">Calendar</span>
-        <h1>${esc(season)} Season</h1>
-        <p class="sub">${races.length} rounds · ${lastRound} completed. Open any finished round to view its full results.</p>
+        <h1>${esc(season)} season</h1>
+        <p class="sub">${races.length} rounds, ${lastRound} completed. Open a finished round for its results.</p>
       </div>
       <div class="race-grid">${cells}</div>
     `;
@@ -335,7 +295,7 @@ async function renderRace(round) {
     const race = data.MRData.RaceTable.Races[0];
     if (!race) { view.innerHTML = `<a class="back-link" href="#/season">‹ Season</a><p class="empty-note">No results for this round yet.</p>`; return; }
     view.innerHTML = `
-      <a class="back-link" href="#/season">‹ All races</a>
+      <a class="back-link" href="#/season">‹ Season</a>
       ${raceBanner(race)}
       <h2 class="section-title">Classification</h2>
       ${resultsTable(race.Results)}
@@ -361,7 +321,6 @@ async function renderStandings() {
           <td class="pos-cell ${posClass}">${esc(s.position)}</td>
           <td>
             <span class="driver-cell">
-              <span class="flag">${flag(d.nationality)}</span>
               <a href="#/driver/${encodeURIComponent(d.driverId)}">${esc(fullName(d))}</a>
               <span class="code">${esc(d.code || "")}</span>
             </span>
@@ -374,8 +333,7 @@ async function renderStandings() {
 
     view.innerHTML = `
       <div class="page-head">
-        <span class="eyebrow">World Championship</span>
-        <h1>${esc(season)} Drivers' Standings</h1>
+        <h1>${esc(season)} drivers' standings</h1>
         <p class="sub">After round ${esc(list.round)}.</p>
       </div>
       <div class="table-wrap">
@@ -448,19 +406,15 @@ async function renderDriver(driverId) {
 
     view.innerHTML = `
       <a class="back-link" href="#/standings">‹ Standings</a>
-      <div class="driver-hero" style="--team:${tc}">
-        <div class="driver-hero__num">${esc(driver.permanentNumber || "")}</div>
-        <div>
-          <h1 class="driver-hero__name"><span class="flag">${flag(driver.nationality)}</span> ${esc(fullName(driver))}</h1>
-          <div class="driver-hero__meta">
-            <span><b>${esc(team)}</b></span>
-            <span>${esc(driver.nationality)}</span>
-            <span>Car <b>#${esc(driver.permanentNumber || "–")}</b></span>
-            <span>${age} yrs</span>
-            <span>Championship <b>${esc(ordinalSafe(champPos))}</b></span>
-          </div>
-        </div>
-      </div>
+      <header class="page-head driver-hero" style="--team:${tc}">
+        <h1>${esc(fullName(driver))} <span class="driver-hero__num">${esc(driver.permanentNumber || "")}</span></h1>
+        <p class="sub driver-hero__meta">
+          <span class="team-tag"><i class="bar"></i>${esc(team)}</span>
+          <span>${esc(driver.nationality)}</span>
+          <span>${age} years old</span>
+          <span>${esc(ordinalSafe(champPos))} in the championship</span>
+        </p>
+      </header>
 
       <div class="stat-row">
         <div class="stat-tile"><div class="k">Points</div><div class="v">${esc(totalPoints)}</div></div>
@@ -831,12 +785,12 @@ async function renderDashboard(round) {
     const flDriver = dyn.fastest ? info.get(dyn.fastest.did) : null;
 
     const kpis = [
-      { k: "Winner", v: winner.name, meta: winner.team, c: winner.color },
-      { k: "Pole position", v: poleName, meta: "Qualifying P1", c: "var(--accent)" },
-      { k: "Fastest lap", v: flDriver ? flDriver.code : "—", meta: dyn.fastest ? `${fmtLap(dyn.fastest.t)} · L${dyn.fastest.lap}` : "no lap data", c: "var(--s5)" },
-      { k: "Biggest climber", v: topMover ? `${topMover.code} +${topMover.delta}` : "—", meta: topMover ? `P${topMover.grid} → P${topMover.finish}` : "", c: "var(--pos-up)" },
-      { k: "Lead changes", v: hasLaps ? String(dyn.leadChanges) : "—", meta: `${lastLap} laps`, c: "var(--s1)" },
-      { k: "DNFs", v: String(dnfCount), meta: `${N - dnsCount} starters`, c: "var(--pos-down)" },
+      { k: "Winner", v: winner.name, meta: winner.team },
+      { k: "Pole position", v: poleName, meta: "Qualifying P1" },
+      { k: "Fastest lap", v: flDriver ? flDriver.code : "—", meta: dyn.fastest ? `${fmtLap(dyn.fastest.t)} · lap ${dyn.fastest.lap}` : "no lap data" },
+      { k: "Biggest climber", v: topMover ? `${topMover.code} +${topMover.delta}` : "—", meta: topMover ? `P${topMover.grid} → P${topMover.finish}` : "" },
+      { k: "Lead changes", v: hasLaps ? String(dyn.leadChanges) : "—", meta: `${lastLap} laps` },
+      { k: "DNFs", v: String(dnfCount), meta: `${N - dnsCount} starters` },
     ];
 
     // --- race selector options (completed rounds only) ---
@@ -849,9 +803,9 @@ async function renderDashboard(round) {
     view.innerHTML = `
       <div class="dash-head">
         <div class="page-head" style="margin:0">
-          <span class="eyebrow">Race Analytics · Round ${esc(race.round)}</span>
-          <h1>${countryFlag(loc.country)} ${esc(race.raceName)}</h1>
-          <p class="sub">${esc(race.Circuit.circuitName)} · ${esc(loc.locality)}, ${esc(loc.country)} · ${fmtDate(race.date)}</p>
+          <p class="eyebrow">Race analytics · Round ${esc(race.round)} · ${fmtDate(race.date)}</p>
+          <h1>${esc(race.raceName)}</h1>
+          <p class="sub">${esc(race.Circuit.circuitName)}, ${esc(loc.locality)}, ${esc(loc.country)}</p>
         </div>
         <div class="round-select-wrap">
           <select class="round-select" id="roundSelect" aria-label="Choose a race">${options}</select>
@@ -860,7 +814,7 @@ async function renderDashboard(round) {
       </div>
 
       <div class="kpi-row">
-        ${kpis.map((x) => `<div class="kpi" style="--kc:${x.c}"><div class="k">${esc(x.k)}</div><div class="v">${esc(x.v)}</div><div class="meta2">${esc(x.meta)}</div></div>`).join("")}
+        ${kpis.map((x) => `<div class="kpi"><div class="k">${esc(x.k)}</div><div class="v">${esc(x.v)}</div><div class="meta2">${esc(x.meta)}</div></div>`).join("")}
       </div>
 
       <div class="dash-grid">
@@ -912,14 +866,10 @@ async function renderDashboard(round) {
         </div>
       </div>
 
-      <div class="pipeline">
-        <span>Pipeline:</span>
-        <span class="chip">${N} results</span>
-        <span class="chip">${totalRows} lap rows</span>
-        <span class="chip">${pitStops.length} pit stops</span>
-        <span class="chip">${quali.length} quali times</span>
-        <span>joined &amp; aggregated in your browser · source <b>${sourceName()}</b></span>
-      </div>
+      <p class="pipeline">
+        Built in your browser from ${N} results, ${totalRows.toLocaleString()} lap rows, ${pitStops.length} pit stops
+        and ${quali.length} qualifying times. Source: ${sourceName()}.
+      </p>
     `;
 
     // round selector
@@ -1128,7 +1078,7 @@ function fillAnalysisTable(tbody, results, info, pace, pitsByDriver, fastestStop
       : delta > 0 ? `<span class="mover-val up">+${delta}</span>`
       : delta < 0 ? `<span class="mover-val down">${delta}</span>` : `<span class="mover-val zero">0</span>`;
     const stops = (pitsByDriver.get(did) || []).length;
-    const stopsHTML = fastestStop.did === did ? `${stops} ⚡` : String(stops);
+    const stopsHTML = fastestStop.did === did ? `<span title="Fastest pit stop of the race">${stops}*</span>` : String(stops);
     const posClass = ["", "p1", "p2", "p3"][v.finish] || "";
     return `
       <tr>
@@ -1154,27 +1104,40 @@ function fillAnalysisTable(tbody, results, info, pace, pitsByDriver, fastestStop
    probability of each outcome. A projection, not a prediction —
    it assumes future form resembles the season so far.
    ============================================================ */
+let seasonRacesCache = null;
 let allResultsCache = null;
 let FC = null; // cached forecast inputs, so what-if scenarios re-run without re-fetching
-async function getAllResults() {
-  if (allResultsCache) return allResultsCache;
-  const pointsByDriver = new Map();
-  const roundsSet = new Set();
+
+/* Every race of the season with its full classification, in round order */
+async function getSeasonRaces() {
+  if (seasonRacesCache) return seasonRacesCache;
+  const byRound = new Map();
   const ingest = (resp) => {
     for (const race of resp.MRData.RaceTable.Races) {
-      roundsSet.add(Number(race.round));
-      for (const r of race.Results) {
-        const did = r.Driver.driverId;
-        if (!pointsByDriver.has(did)) pointsByDriver.set(did, []);
-        pointsByDriver.get(did).push(Number(r.points));
-      }
+      const have = byRound.get(race.round);   // a page boundary can split one race's results
+      if (have) have.Results.push(...race.Results);
+      else byRound.set(race.round, { ...race, Results: [...race.Results] });
     }
   };
   const first = await getJSON(`current/results.json?limit=${PAGE}&offset=0`);
   const total = Number(first.MRData.total) || 0;
   ingest(first);
   for (let off = PAGE; off < total; off += PAGE) ingest(await getJSON(`current/results.json?limit=${PAGE}&offset=${off}`));
-  allResultsCache = { pointsByDriver, rounds: [...roundsSet].sort((a, b) => a - b) };
+  seasonRacesCache = [...byRound.values()].sort((a, b) => a.round - b.round);
+  return seasonRacesCache;
+}
+async function getAllResults() {
+  if (allResultsCache) return allResultsCache;
+  const races = await getSeasonRaces();
+  const pointsByDriver = new Map();
+  for (const race of races) {
+    for (const r of race.Results) {
+      const did = r.Driver.driverId;
+      if (!pointsByDriver.has(did)) pointsByDriver.set(did, []);
+      pointsByDriver.get(did).push(Number(r.points));
+    }
+  }
+  allResultsCache = { pointsByDriver, rounds: races.map((r) => Number(r.round)) };
   return allResultsCache;
 }
 
@@ -1193,7 +1156,7 @@ function simulateSeason(drivers, remaining, N, skew) {
         let v = h[(Math.random() * h.length) | 0];
         if (g > 0) v = v + g * (WIN_POINTS - v);       // toward winning every race
         else if (g < 0) v = v * (1 + g);               // toward zero points
-        if (g !== 0) v = Math.min(26, Math.max(0, Math.round(v)));
+        if (g !== 0) v = Math.min(WIN_POINTS, Math.max(0, Math.round(v)));
         add += v;
       }
       return { did: d.did, pts: d.current + add };
@@ -1227,7 +1190,7 @@ async function renderForecast() {
     const totalRounds = schedule.MRData.RaceTable.Races.length;
     const lastRound = Number(lastData.MRData.RaceTable.Races[0]?.round) || all.rounds[all.rounds.length - 1] || 0;
     const remaining = Math.max(0, totalRounds - lastRound);
-    const MAX_PER_RACE = 26; // 25 for a win + 1 for fastest lap
+    const MAX_PER_RACE = WIN_POINTS; // no fastest-lap point since 2025
     const available = remaining * MAX_PER_RACE;
 
     const drivers = list.DriverStandings.map((s) => ({
@@ -1248,13 +1211,12 @@ async function renderForecast() {
     FC = { drivers, remaining, remainingRaces, totalRounds, available, season, leader, margin, clinched, racesSampled: all.rounds.length };
 
     const statusHTML = clinched
-      ? `<span class="status-pill clinched">● Title clinched by ${esc(leader.name)}</span>`
-      : `<span class="status-pill open">● Title open — ${remaining} round${remaining === 1 ? "" : "s"} left</span>`;
+      ? `<span class="status-pill clinched">Title clinched by ${esc(leader.name)}</span>`
+      : `<span class="status-pill open">Title still open, ${remaining} round${remaining === 1 ? "" : "s"} left</span>`;
 
     view.innerHTML = `
       <div class="page-head">
-        <span class="eyebrow">Championship Forecast</span>
-        <h1>${esc(season)} Title Projection</h1>
+        <h1>${esc(season)} title forecast</h1>
         <p class="sub">${statusHTML}</p>
       </div>
 
@@ -1269,10 +1231,10 @@ async function renderForecast() {
       </div>` : ""}
 
       <div class="kpi-row">
-        <div class="kpi" style="--kc:var(--accent)"><div class="k">Rounds left</div><div class="v">${remaining}</div><div class="meta2">of ${totalRounds}</div></div>
-        <div class="kpi" style="--kc:var(--s1)"><div class="k">Points still available</div><div class="v">${available}</div><div class="meta2">max ${MAX_PER_RACE}/race</div></div>
-        <div class="kpi" style="--kc:${leader.color}"><div class="k">Leader</div><div class="v">${esc(leader.code)}</div><div class="meta2">${leader.current} pts</div></div>
-        <div class="kpi" style="--kc:var(--s5)"><div class="k">Lead margin</div><div class="v">${margin}</div><div class="meta2">over P2</div></div>
+        <div class="kpi"><div class="k">Rounds left</div><div class="v">${remaining}</div><div class="meta2">of ${totalRounds}</div></div>
+        <div class="kpi"><div class="k">Points still available</div><div class="v">${available}</div><div class="meta2">max ${MAX_PER_RACE}/race</div></div>
+        <div class="kpi"><div class="k">Leader</div><div class="v">${esc(leader.code)}</div><div class="meta2">${leader.current} pts</div></div>
+        <div class="kpi"><div class="k">Lead margin</div><div class="v">${margin}</div><div class="meta2">over P2</div></div>
       </div>
 
       <div class="dash-grid">
@@ -1312,13 +1274,10 @@ async function renderForecast() {
         </div>
       </div>
 
-      <div class="pipeline">
-        <span>Pipeline:</span>
-        <span class="chip">${all.rounds.length} races sampled</span>
-        <span class="chip">${drivers.length} drivers</span>
-        <span class="chip">5,000 sims × ${remaining} rounds</span>
-        <span>bootstrap Monte-Carlo in your browser · source <b>${sourceName()}</b></span>
-      </div>
+      <p class="pipeline">
+        5,000 simulations of ${remaining} round${remaining === 1 ? "" : "s"}, resampling ${all.rounds.length} races
+        for ${drivers.length} drivers, run in your browser. Source: ${sourceName()}.
+      </p>
     `;
 
     const addBtn = $("#addScenario");
@@ -1422,7 +1381,7 @@ function renderScenario() {
     const mv = d.pos - projPos;
     const mvHTML = mv > 0 ? `<span class="mover-val up">▲${mv}</span>` : mv < 0 ? `<span class="mover-val down">▼${-mv}</span>` : `<span class="mover-val zero">–</span>`;
     const champPct = d.pChamp * 100;
-    const champStr = champPct >= 99.95 ? "✓" : champPct >= 9.95 ? champPct.toFixed(0) + "%" : champPct >= 0.05 ? champPct.toFixed(1) + "%" : "—";
+    const champStr = champPct >= 99.95 ? "100%" : champPct >= 9.95 ? champPct.toFixed(0) + "%" : champPct >= 0.05 ? champPct.toFixed(1) + "%" : "—";
     const posClass = ["", "p1", "p2", "p3"][projPos] || "";
     const hi = skew.has(d.did) ? ' class="skew-hi"' : "";
     return `
@@ -1484,6 +1443,595 @@ function renderRemainingPoints(selMap) {
 }
 
 /* ============================================================
+   CHAMPION
+   The season of the drivers' champion: headline numbers, then an
+   exploratory analysis (EDA) built in the browser from the season's
+   results, each round's qualifying and standings, and the champion's
+   own lap-by-lap positions. Shown only while CHAMPION.confirmed.
+   ============================================================ */
+const SPRINT_WIN_POINTS = 8;
+function championVisible(season) { return CHAMPION.confirmed && String(season) === CHAMPION.season; }
+
+/* Fetch many paths a few at a time, to stay under the live API's rate limit.
+   A path that fails gives null. */
+async function getEach(paths, onProgress) {
+  const out = new Array(paths.length);
+  let next = 0, done = 0;
+  const worker = async () => {
+    while (next < paths.length) {
+      const i = next++;
+      out[i] = await getJSON(paths[i]).catch(() => null);
+      onProgress?.(++done, paths.length);
+    }
+  };
+  await Promise.all(Array.from({ length: DATA.mode === "live" ? 2 : 6 }, worker));
+  return out;
+}
+
+function describe(values) {
+  const v = values.filter((x) => x != null && !isNaN(x)).sort((a, b) => a - b);
+  const n = v.length;
+  if (!n) return null;
+  const mean = v.reduce((a, b) => a + b, 0) / n;
+  const median = n % 2 ? v[(n - 1) / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
+  const sd = n > 1 ? Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)) : 0;
+  return { n, mean, median, sd, min: v[0], max: v[n - 1] };
+}
+function pearson(pairs) {
+  if (pairs.length < 3) return null;
+  const n = pairs.length;
+  const mx = pairs.reduce((a, p) => a + p[0], 0) / n, my = pairs.reduce((a, p) => a + p[1], 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (const [x, y] of pairs) { sxy += (x - mx) * (y - my); sxx += (x - mx) ** 2; syy += (y - my) ** 2; }
+  return sxx && syy ? sxy / Math.sqrt(sxx * syy) : null;
+}
+/* seconds between two qualifying entries, in the last session both set a time in */
+function qualiGap(a, b) {
+  for (const k of ["Q3", "Q2", "Q1"]) {
+    const ta = toSec(a?.[k]), tb = toSec(b?.[k]);
+    if (ta && tb) return ta - tb;
+  }
+  return null;
+}
+function longestRun(flags) {
+  let best = 0, run = 0;
+  for (const f of flags) { run = f ? run + 1 : 0; best = Math.max(best, run); }
+  return best;
+}
+const sum = (xs) => xs.reduce((a, b) => a + (b || 0), 0);
+const pct = (a, b) => (b ? Math.round((a / b) * 100) + "%" : "—");
+const shortGP = (name) => name.replace(/ Grand Prix$/, "");
+
+/* One row per round the champion raced, plus the standings after every round */
+function championSeason(did, schedule, races, standRounds, qualRounds, lapRounds) {
+  const rows = [], tables = new Map(), sprintRounds = new Set();
+  let prev = new Map();
+  races.forEach((race, i) => {
+    const round = Number(race.round);
+    const list = standRounds[i]?.MRData.StandingsTable.StandingsLists[0]?.DriverStandings || [];
+    const table = new Map(list.map((s) => [s.Driver.driverId, Number(s.points)]));
+    tables.set(round, table);
+    // standings points gained beyond the Grand Prix's own points came from a sprint
+    const gpPoints = sum(race.Results.map((r) => Number(r.points)));
+    let gained = 0;
+    table.forEach((p, d) => { gained += p - (prev.get(d) || 0); });
+    if (table.size && gained - gpPoints > 0.5) sprintRounds.add(round);
+
+    const res = race.Results.find((r) => r.Driver.driverId === did);
+    if (res) {
+      const N = race.Results.length;
+      const quali = qualRounds[i]?.MRData.RaceTable.Races[0]?.QualifyingResults || [];
+      const q = quali.find((x) => x.Driver.driverId === did);
+      const poleQ = quali.find((x) => x.position === "1");
+      const mateRes = race.Results.find((r) => r.Constructor.constructorId === res.Constructor.constructorId && r.Driver.driverId !== did);
+      const mateQ = mateRes && quali.find((x) => x.Driver.driverId === mateRes.Driver.driverId);
+      const laps = lapRounds[i]?.MRData.RaceTable.Races[0]?.Laps || [];
+      const pos = laps.map((l) => Number(l.Timings[0]?.position)).filter(Boolean);
+      const finish = Number(res.position), p2 = race.Results.find((r) => r.position === "2");
+      const gap = q && poleQ ? qualiGap(q, poleQ) : null;
+      const total = table.get(did);
+      const rivals = [...table].filter(([d]) => d !== did).map(([, p]) => p);
+      rows.push({
+        round, name: shortGP(race.raceName), raceName: race.raceName,
+        grid: Number(res.grid) || N, gridText: res.grid === "0" ? "Pit lane" : `P${res.grid}`,
+        finish, finishText: res.positionText, status: res.status, dnf: isDNF(res.status),
+        points: Number(res.points), fl: res.FastestLap?.rank === "1",
+        quali: q ? Number(q.position) : null,
+        pole: q ? q.position === "1" : res.grid === "1",
+        qGap: gap == null ? null : Math.max(0, gap),
+        mate: mateRes ? {
+          did: mateRes.Driver.driverId, name: fullName(mateRes.Driver), code: driverCode(mateRes.Driver),
+          quali: mateQ ? Number(mateQ.position) : null, finish: Number(mateRes.position),
+          dnf: isDNF(mateRes.status), points: Number(mateRes.points),
+        } : null,
+        lapsLed: pos.length ? pos.filter((p) => p === 1).length : null,
+        bands: [pos.filter((p) => p === 1).length, pos.filter((p) => p === 2 || p === 3).length,
+                pos.filter((p) => p >= 4 && p <= 10).length, pos.filter((p) => p > 10).length],
+        raceLaps: Number(race.Results[0].laps) || null,
+        margin: finish === 1 && p2?.Time ? toSec(p2.Time.time.replace(/^\+/, "")) : null,
+        total: total ?? null,
+        champPos: Number(list.find((s) => s.Driver.driverId === did)?.position) || null,
+        lead: total != null && rivals.length ? total - Math.max(...rivals) : null,
+        sprintPts: total != null ? total - (prev.get(did) || 0) - Number(res.points) : null,
+      });
+    }
+    if (table.size) prev = table;
+  });
+
+  // points a rival could still score after each round: every Grand Prix and sprint left
+  const totalRounds = schedule.MRData.RaceTable.Races.length;
+  const lastRound = races.length ? Number(races[races.length - 1].round) : 0;
+  schedule.MRData.RaceTable.Races.forEach((r) => { if (Number(r.round) > lastRound && r.Sprint) sprintRounds.add(Number(r.round)); });
+  rows.forEach((r) => {
+    r.sprint = sprintRounds.has(r.round);
+    r.avail = WIN_POINTS * (totalRounds - r.round) + SPRINT_WIN_POINTS * [...sprintRounds].filter((k) => k > r.round).length;
+  });
+  const clinch = rows.find((r) => r.champPos === 1 && r.lead != null && r.lead > r.avail) || null;
+  return { rows, tables, clinch, totalRounds, sprintRounds };
+}
+
+async function renderChampion() {
+  view.innerHTML = `<div class="loader"><span class="loader__spin"></span> Loading the champion's season…</div><div class="dash-progress" id="champProgress"></div>`;
+  try {
+    const [standData, schedule, races] = await Promise.all([
+      getJSON("current/driverstandings.json"), getJSON("current.json"), getSeasonRaces(),
+    ]);
+    const season = standData.MRData.StandingsTable.season;
+    const list = standData.MRData.StandingsTable.StandingsLists[0];
+    if (!list || !championVisible(season) || !races.length) {
+      view.innerHTML = `<p class="empty-note">This page opens once the ${esc(season)} drivers' title has been decided.</p>`;
+      return;
+    }
+    const champ = list.DriverStandings[0], second = list.DriverStandings[1];
+    const did = champ.Driver.driverId, drv = champ.Driver;
+    const team = champ.Constructors[champ.Constructors.length - 1]?.name || "";
+
+    const rounds = races.map((r) => r.round);
+    const prog = $("#champProgress");
+    const fetched = await getEach([
+      ...rounds.map((r) => `current/${r}/driverstandings.json`),
+      ...rounds.map((r) => `current/${r}/qualifying.json?limit=${PAGE}`),
+      ...rounds.map((r) => `current/${r}/drivers/${encodeURIComponent(did)}/laps.json?limit=${PAGE}`),
+    ], (done, all) => { if (prog) prog.textContent = `Loading round data… ${done} / ${all}`; });
+    const k = rounds.length;
+    const S = championSeason(did, schedule, races, fetched.slice(0, k), fetched.slice(k, 2 * k), fetched.slice(2 * k));
+    const { rows, clinch, totalRounds } = S;
+    const n = rows.length;
+
+    // ---- headline numbers ----
+    const wins = rows.filter((r) => r.finish === 1 && !r.dnf);
+    const poles = rows.filter((r) => r.pole);
+    const polesWon = poles.filter((r) => r.finish === 1).length;
+    const podiums = rows.filter((r) => r.finish <= 3 && !r.dnf).length;
+    const withLaps = rows.filter((r) => r.lapsLed != null);
+    const lapsLed = sum(withLaps.map((r) => r.lapsLed)), raceLaps = sum(withLaps.map((r) => r.raceLaps));
+    const lapsRun = sum(withLaps.map((r) => sum(r.bands)));
+    const racesLed = withLaps.filter((r) => r.lapsLed > 0).length;
+    const fastestLaps = rows.filter((r) => r.fl).length;
+    const hatTricks = rows.filter((r) => r.pole && r.finish === 1 && r.fl).length;
+    const grandSlams = rows.filter((r) => r.pole && r.finish === 1 && r.fl && r.lapsLed != null && r.lapsLed === r.raceLaps).length;
+    const frontRows = rows.filter((r) => r.grid <= 2).length;
+    const classified = rows.filter((r) => !r.dnf);
+    const dnfs = rows.filter((r) => r.dnf && !isDNS(r.status)).length;
+    const sprintPts = sum(rows.map((r) => r.sprintPts));
+    const comeback = wins.reduce((b, r) => (!b || r.grid > b.grid ? r : b), null);
+    const winStreak = longestRun(rows.map((r) => r.finish === 1 && !r.dnf));
+    const leading = rows.filter((r) => r.champPos === 1).length;
+    const margin = second ? Number(champ.points) - Number(second.points) : null;
+    const avgFinish = describe(classified.map((r) => r.finish))?.mean;
+    const avgGrid = describe(rows.map((r) => r.grid))?.mean;
+    const fmt1 = (v) => (v == null ? "—" : v.toFixed(1));
+
+    const clinchLine = clinch
+      ? `Clinched at the ${esc(clinch.raceName)}, round ${clinch.round}, ${totalRounds - clinch.round > 0
+          ? `with ${totalRounds - clinch.round} round${totalRounds - clinch.round === 1 ? "" : "s"} to spare` : "the final round"}.`
+      : "Title confirmed.";
+
+    const tiles = [
+      ["Points", champ.points, margin != null ? `${margin} ahead of ${esc(fullName(second.Driver))}` : ""],
+      ["Wins", wins.length, `${pct(wins.length, n)} of ${n} races`],
+      ["Podiums", podiums, `${pct(podiums, n)} of races`],
+      ["Pole positions", poles.length, `${frontRows} front-row starts`],
+      ["Poles converted", `${polesWon}/${poles.length}`, `${pct(polesWon, poles.length)} of poles turned into wins`],
+      ["Laps led", lapsLed, `${pct(lapsLed, raceLaps)} of all race laps, in ${racesLed} races`],
+      ["Fastest laps", fastestLaps, `in ${pct(fastestLaps, n)} of races`],
+      ["Hat-tricks", hatTricks, "pole, win and fastest lap"],
+      ["Grand slams", grandSlams, "a hat-trick, leading every lap"],
+      ["Sprint points", sprintPts, `from ${[...S.sprintRounds].filter((r) => r <= rows[n - 1].round).length} sprints`],
+      ["Average finish", fmt1(avgFinish), `from an average grid slot of ${fmt1(avgGrid)}`],
+      ["Best comeback", comeback ? comeback.gridText : "—", comeback ? `won from there at the ${esc(comeback.name)} GP` : "no wins"],
+      ["Longest win streak", winStreak, winStreak === 1 ? "race" : "races in a row"],
+      ["Led the championship", `${leading}/${n}`, "rounds"],
+      ["Did not finish", dnfs, `${classified.length} classified finishes`],
+    ];
+
+    // ---- rivals for the points chart: the next three in the standings ----
+    const contenders = list.DriverStandings.slice(0, 4).map((s, i) => ({
+      did: s.Driver.driverId, code: driverCode(s.Driver), name: fullName(s.Driver),
+      color: `var(--s${i + 1})`, pts: new Map([...S.tables].map(([r, t]) => [r, t.get(s.Driver.driverId) ?? null])),
+    }));
+    const roundNums = [...S.tables.keys()];
+    const names = new Map(races.map((r) => [Number(r.round), shortGP(r.raceName)]));
+
+    // ---- teammate (the one they shared the most races with) ----
+    const mateCount = new Map();
+    rows.forEach((r) => r.mate && mateCount.set(r.mate.did, (mateCount.get(r.mate.did) || 0) + 1));
+    const mateId = [...mateCount].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const shared = rows.filter((r) => r.mate?.did === mateId);
+    const mate = shared[0]?.mate;
+    const qBoth = shared.filter((r) => r.quali && r.mate.quali);
+    const rBoth = shared.filter((r) => !r.dnf && !r.mate.dnf);
+    const mateStanding = list.DriverStandings.find((s) => s.Driver.driverId === mateId);
+    const h2h = mate ? [
+      ["Qualifying", qBoth.filter((r) => r.quali < r.mate.quali).length, qBoth.filter((r) => r.mate.quali < r.quali).length],
+      ["Race, both finished", rBoth.filter((r) => r.finish < r.mate.finish).length, rBoth.filter((r) => r.mate.finish < r.finish).length],
+      ["Wins", shared.filter((r) => r.finish === 1 && !r.dnf).length, shared.filter((r) => r.mate.finish === 1 && !r.mate.dnf).length],
+      ["Podiums", shared.filter((r) => r.finish <= 3 && !r.dnf).length, shared.filter((r) => r.mate.finish <= 3 && !r.mate.dnf).length],
+      ["Championship points", Number(champ.points), mateStanding ? Number(mateStanding.points) : "—"],
+    ] : [];
+
+    // ---- summary statistics ----
+    const statRows = [
+      ["Qualifying position", rows.map((r) => r.quali), 1],
+      ["Grid position", rows.map((r) => r.grid), 1],
+      ["Finishing position, classified", classified.map((r) => r.finish), 1],
+      ["Positions gained, classified", classified.map((r) => r.grid - r.finish), 1],
+      ["Points per Grand Prix", rows.map((r) => r.points), 1],
+      ["Laps led per race", rows.map((r) => r.lapsLed), 1],
+      ["Gap to pole (s)", rows.map((r) => r.qGap), 3],
+      ["Winning margin (s)", rows.map((r) => r.margin), 3],
+    ];
+    const rGridFinish = pearson(classified.map((r) => [r.grid, r.finish]));
+    const fromPole = describe(rows.filter((r) => r.grid === 1).map((r) => r.points));
+    const fromElse = describe(rows.filter((r) => r.grid !== 1).map((r) => r.points));
+    const winMargin = describe(wins.map((r) => r.margin));
+
+    view.innerHTML = `
+      <header class="page-head">
+        <p class="eyebrow">${esc(season)} Formula 1 World Champion</p>
+        <h1 class="champ-name">${esc(fullName(drv))}</h1>
+        <p class="sub"><span class="team-tag" style="--team:${teamColor(team)}"><i class="bar"></i>${esc(team)}</span> · ${clinchLine}</p>
+      </header>
+
+      <nav class="toc" aria-label="On this page">
+        <button type="button" data-jump="ch-title">Title race</button>
+        <button type="button" data-jump="ch-races">Races</button>
+        <button type="button" data-jump="ch-quali">Qualifying</button>
+        <button type="button" data-jump="ch-stats">Statistics</button>
+        <button type="button" data-jump="ch-log">Race by race</button>
+      </nav>
+
+      <div class="stat-row">
+        ${tiles.map(([kk, v, d]) => `<div class="stat-tile"><div class="k">${kk}</div><div class="v">${esc(v)}</div>${d ? `<div class="d">${d}</div>` : ""}</div>`).join("")}
+      </div>
+
+      <h2 class="section-title" id="ch-title">The title race</h2>
+      <p class="prose">An exploratory look at the ${esc(season)} season, from ${n} Grands Prix, the standings after each round and ${lapsRun.toLocaleString()} of ${esc(drv.familyName)}'s laps.</p>
+      <div class="dash-grid" style="margin-top:0">
+        <div class="chart-card span-2">
+          <h3>Championship points after each round</h3>
+          <p class="csub">${esc(drv.familyName)} against the next three drivers in the standings.</p>
+          <div class="chart-legend">${contenders.map((c) => `<span><i style="border-color:${c.color}"></i>${esc(c.name)}</span>`).join("")}</div>
+          <div class="chart" id="chPoints"></div>
+        </div>
+        <div class="chart-card span-2">
+          <h3>Lead against the points still available</h3>
+          <p class="csub">The title is settled once the lead over second place is bigger than the points a rival could still score.</p>
+          <div class="chart-legend">
+            <span><i class="box" style="background:var(--s1)"></i>Lead over second place</span>
+            <span><i style="border-color:var(--s2)"></i>Points still available</span>
+          </div>
+          <div class="chart" id="chClinch"></div>
+        </div>
+      </div>
+
+      <h2 class="section-title" id="ch-races">Races</h2>
+      <div class="dash-grid" style="margin-top:0">
+        <div class="chart-card span-2">
+          <h3>Grid to finish, every race</h3>
+          <p class="csub">Lines run from the starting slot to the finishing position. Higher is better.</p>
+          <div class="chart-legend">
+            <span><i class="ring"></i>Grid</span>
+            <span><i class="dot" style="background:var(--s1)"></i>Finish</span>
+            <span><i class="dot" style="background:var(--faint)"></i>Did not finish</span>
+          </div>
+          <div class="chart" id="chGrid"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Finishing positions</h3>
+          <p class="csub">How often each result came up, out of ${n} races.</p>
+          <div id="chDist"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Where the laps were spent</h3>
+          <p class="csub">Track position across every lap raced.</p>
+          <div id="chBands"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Laps led per race</h3>
+          <p class="csub">Bar length is the share of the race spent in front.</p>
+          <div id="chLed"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Teammate head-to-head</h3>
+          <p class="csub">${mate ? `${esc(mate.name)}, across ${shared.length} races together.` : "No teammate data."}</p>
+          ${mate ? `<table class="grid compact h2h">
+            <thead><tr><th></th><th class="num">${esc(driverCode(drv))}</th><th class="num">${esc(mate.code)}</th></tr></thead>
+            <tbody>${h2h.map(([label, a, b]) => `<tr><td>${label}</td><td class="num${a > b ? " win" : ""}">${a}</td><td class="num${b > a ? " win" : ""}">${b}</td></tr>`).join("")}</tbody>
+          </table>` : ""}
+        </div>
+      </div>
+
+      <h2 class="section-title" id="ch-quali">Qualifying</h2>
+      <div class="chart-card">
+        <h3>Gap to pole position</h3>
+        <p class="csub">Seconds behind the pole time, in the last session both drivers set a time in. Dots on the baseline are the ${poles.length} pole positions.</p>
+        <div class="chart" id="chQuali"></div>
+      </div>
+
+      <h2 class="section-title" id="ch-stats">Summary statistics</h2>
+      <div class="table-wrap">
+        <table class="grid">
+          <thead><tr><th>Measure</th><th class="num">Races</th><th class="num">Mean</th><th class="num">Median</th><th class="num">Std dev</th><th class="num">Min</th><th class="num">Max</th></tr></thead>
+          <tbody>${statRows.map(([label, vals, dp]) => {
+            const d = describe(vals);
+            const f = (v) => (d ? v.toFixed(Number.isInteger(v) && dp === 1 ? 0 : dp) : "—");
+            return `<tr><td>${label}</td><td class="num">${d ? d.n : 0}</td><td class="num">${d ? d.mean.toFixed(dp) : "—"}</td><td class="num">${d ? f(d.median) : "—"}</td><td class="num">${d ? d.sd.toFixed(dp) : "—"}</td><td class="num">${d ? f(d.min) : "—"}</td><td class="num">${d ? f(d.max) : "—"}</td></tr>`;
+          }).join("")}</tbody>
+        </table>
+      </div>
+      <ul class="limits findings">
+        ${rGridFinish != null ? `<li>Grid slot and finishing position correlate at <b>r = ${rGridFinish.toFixed(2)}</b> over classified finishes${Math.abs(rGridFinish) < 0.3 ? ", so the starting slot said little about the result" : ""}.</li>` : ""}
+        ${fromPole && fromElse ? `<li>${esc(drv.familyName)} scored <b>${fromPole.mean.toFixed(1)}</b> points a race starting from pole (${fromPole.n} starts) and <b>${fromElse.mean.toFixed(1)}</b> from anywhere else (${fromElse.n} starts).</li>` : ""}
+        ${winMargin ? `<li>The median winning margin was <b>${winMargin.median.toFixed(3)} s</b>, and the closest win was by ${winMargin.min.toFixed(3)} s.</li>` : ""}
+        ${sprintPts ? `<li><b>${sprintPts}</b> of ${esc(drv.familyName)}'s ${esc(champ.points)} points (${pct(sprintPts, Number(champ.points))}) came from sprints.</li>` : ""}
+      </ul>
+
+      <h2 class="section-title" id="ch-log">Race by race</h2>
+      <div class="table-wrap">
+        <table class="grid">
+          <thead><tr>
+            <th>Rd</th><th>Grand Prix</th><th class="num">Quali</th><th class="num">Grid</th><th class="num">Finish</th>
+            <th class="num">Laps led</th><th class="num">Pts</th><th class="num">Sprint</th><th class="num">Total</th><th class="num">Lead</th>
+          </tr></thead>
+          <tbody>${rows.map((r) => `
+            <tr${clinch && r.round === clinch.round ? ' class="is-used" title="Title clinched"' : ""}>
+              <td class="mono">${r.round}</td>
+              <td><a href="#/race/${r.round}">${esc(r.name)}</a></td>
+              <td class="num${r.pole ? " strong" : ""}">${r.quali ?? "—"}</td>
+              <td class="num">${esc(r.gridText.replace(/^P/, ""))}</td>
+              <td class="num">${r.dnf ? `<span class="status-dnf">${esc(r.status)}</span>` : `<span class="${r.finish === 1 ? "strong" : ""}">${esc(r.finishText)}</span>`}${r.fl ? ` <span class="code" title="Fastest lap">FL</span>` : ""}</td>
+              <td class="num">${r.lapsLed == null ? "—" : `${r.lapsLed}<span class="muted-num">/${r.raceLaps}</span>`}</td>
+              <td class="num">${r.points}</td>
+              <td class="num">${r.sprint ? r.sprintPts : "–"}</td>
+              <td class="num"><b>${r.total ?? "—"}</b></td>
+              <td class="num">${r.lead == null ? "—" : r.lead > 0 ? `+${r.lead}` : r.lead}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+      <p class="table-note">FL: fastest lap. Total and lead include sprint points.${clinch ? ` The highlighted row is where the title was clinched.` : ""}</p>
+
+      <p class="pipeline">Built in your browser from ${races.length} race classifications, ${k} qualifying sessions,
+        ${k} rounds of standings and ${lapsRun.toLocaleString()} laps. Source: ${sourceName()}.</p>
+    `;
+
+    drawTitleRace($("#chPoints"), contenders, roundNums, clinch?.round, names);
+    drawClinchChart($("#chClinch"), rows, clinch?.round);
+    drawGridFinish($("#chGrid"), rows);
+    drawPoleGap($("#chQuali"), rows);
+
+    const dist = [
+      ["Win", (r) => r.finish === 1], ["2nd", (r) => r.finish === 2], ["3rd", (r) => r.finish === 3],
+      ["4th–5th", (r) => r.finish >= 4 && r.finish <= 5], ["6th–10th", (r) => r.finish >= 6 && r.finish <= 10],
+      ["Outside top 10", (r) => r.finish > 10],
+    ].map(([label, test]) => {
+      const hit = classified.filter(test);
+      return { label, value: hit.length, tip: `<b>${label}</b><br>${hit.length ? hit.map((r) => esc(r.name)).join(", ") : "none"}` };
+    });
+    const dnfRows = rows.filter((r) => r.dnf);
+    dist.push({ label: "Did not finish", value: dnfRows.length, tip: `<b>Did not finish</b><br>${dnfRows.map((r) => `${esc(r.name)}: ${esc(r.status)}`).join("<br>") || "none"}` });
+    $("#chDist").innerHTML = barList(dist, Math.max(...dist.map((d) => d.value)));
+
+    const bandLabels = ["Leading", "2nd–3rd", "4th–10th", "11th or lower"];
+    $("#chBands").innerHTML = barList(bandLabels.map((label, b) => {
+      const v = sum(withLaps.map((r) => r.bands[b]));
+      return { label, value: v, valText: pct(v, lapsRun), tip: `<b>${label}</b><br><span class="tv">${v}</span> of ${lapsRun} laps` };
+    }), lapsRun);
+
+    $("#chLed").innerHTML = barList(withLaps.map((r) => ({
+      label: `${r.round} · ${r.name}`, value: r.lapsLed, max: r.raceLaps, valText: `${r.lapsLed}/${r.raceLaps}`,
+      tip: `<b>${esc(r.raceName)}</b><br>Led <span class="tv">${r.lapsLed}</span> of ${r.raceLaps} laps · finished ${r.dnf ? esc(r.status) : "P" + r.finish}`,
+    })), null, "wide");
+
+    view.querySelectorAll("[data-tip]").forEach((el) => {
+      el.addEventListener("mousemove", (e) => showTip(el.dataset.tip, e));
+      el.addEventListener("mouseleave", hideTip);
+    });
+    wireJumpLinks();
+  } catch (err) { showError(err); }
+}
+
+/* Horizontal bars with a hover note: items are { label, value, max?, valText?, tip? } */
+function barList(items, max, cls = "") {
+  return `<div class="bar-list">${items.map((it) => {
+    const m = it.max ?? max;
+    const w = m ? (it.value / m) * 100 : 0;
+    return `
+      <div class="bar-row ${cls}"${it.tip ? ` data-tip="${esc(it.tip)}"` : ""}>
+        <span class="bar-row__label" title="${esc(it.label)}">${esc(it.label)}</span>
+        <span class="bar-row__track">${w > 0 ? `<span class="bar-row__fill" style="width:${w}%"></span>` : ""}</span>
+        <span class="bar-row__val">${esc(it.valText ?? it.value)}</span>
+      </div>`;
+  }).join("")}</div>`;
+}
+
+/* a column with a 4px rounded end away from the baseline */
+function colPath(x, w, yBase, yEnd, r = 4) {
+  const h = Math.abs(yEnd - yBase);
+  if (h < 0.5) return "";
+  r = Math.min(r, h, w / 2);
+  const s = yEnd < yBase ? 1 : -1;   // 1 = grows upward
+  return `M${x},${yBase} V${yEnd + s * r} Q${x},${yEnd} ${x + r},${yEnd} H${x + w - r} Q${x + w},${yEnd} ${x + w},${yEnd + s * r} V${yBase} Z`;
+}
+function nearestIndex(evt, svg, W, xs) {
+  const b = svg.getBoundingClientRect();
+  const vx = ((evt.clientX - b.left) / b.width) * W;
+  let best = 0;
+  xs.forEach((x, i) => { if (Math.abs(x - vx) < Math.abs(xs[best] - vx)) best = i; });
+  return best;
+}
+function yAxis(svg, ticks, y, x1, x2, fmt = (v) => v) {
+  ticks.forEach((v) => {
+    svg.appendChild(svgEl("line", { class: "grid-line", x1, y1: y(v), x2, y2: y(v) }));
+    const t = svgEl("text", { x: x1 - 8, y: y(v) + 4, "text-anchor": "end" }); t.textContent = fmt(v); svg.appendChild(t);
+  });
+}
+function xLabels(svg, labels, xs, yy) {
+  const every = xs.length > 1 && xs[1] - xs[0] < 22 ? 2 : 1;   // thin out when crowded
+  labels.forEach((l, i) => {
+    if (i % every && i !== labels.length - 1) return;
+    const t = svgEl("text", { x: xs[i], y: yy, "text-anchor": "middle" }); t.textContent = l; svg.appendChild(t);
+  });
+}
+/* draw at the card's real width (up to 900), so chart text stays readable on phones */
+function chartWidth(host) { return Math.round(Math.min(900, Math.max(300, host.clientWidth || 900))); }
+function ticksBetween(lo, hi, count) {
+  const step = niceStep((hi - lo) / count || 1);
+  const out = [];
+  for (let v = Math.floor(lo / step) * step; v <= hi + step * 0.01; v += step) out.push(Math.round(v * 1e6) / 1e6);
+  return out;
+}
+
+/* Championship points per round: the champion and three rivals, with a crosshair */
+function drawTitleRace(host, series, rounds, clinchRound, names) {
+  const W = chartWidth(host), H = W < 600 ? 240 : 320, m = { t: 20, r: 36, b: 28, l: 40 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const val = (s, r) => s.pts.get(r) ?? null;
+  const ticks = ticksBetween(0, Math.max(10, ...series.flatMap((s) => rounds.map((r) => val(s, r) || 0))), 4);
+  const top = ticks[ticks.length - 1];
+  const xs = rounds.map((r, i) => m.l + (rounds.length === 1 ? iw / 2 : (i / (rounds.length - 1)) * iw));
+  const y = (v) => m.t + ih - (v / top) * ih;
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Championship points after each round" });
+  yAxis(svg, ticks, y, m.l, W - m.r);
+  xLabels(svg, rounds, xs, H - 8);
+  const ci = rounds.indexOf(clinchRound);
+  if (ci >= 0) {
+    // the bottom of the chart is empty by the time a title is decided, so the label goes there
+    svg.appendChild(svgEl("line", { x1: xs[ci], x2: xs[ci], y1: m.t, y2: m.t + ih, stroke: "var(--border-2)", "stroke-width": 1 }));
+    const t = svgEl("text", { x: xs[ci] - 6, y: m.t + ih - 8, "text-anchor": "end" }); t.textContent = "Title clinched"; svg.appendChild(t);
+  }
+  [...series].reverse().forEach((s) => {
+    const pts = rounds.map((r, i) => (val(s, r) == null ? null : `${xs[i]},${y(val(s, r))}`)).filter(Boolean).join(" ");
+    svg.appendChild(svgEl("polyline", { points: pts, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+  });
+  const c = series[0], li = rounds.length - 1, cv = val(c, rounds[li]);
+  if (cv != null) {
+    svg.appendChild(svgEl("circle", { cx: xs[li], cy: y(cv), r: 4, fill: c.color, stroke: "var(--bg)", "stroke-width": 2 }));
+    const t = svgEl("text", { x: xs[li] + 9, y: y(cv) + 4, class: "end-label" }); t.textContent = cv; svg.appendChild(t);
+  }
+  const cross = svgEl("line", { y1: m.t, y2: m.t + ih, stroke: "var(--border-2)", "stroke-width": 1, opacity: 0 });
+  svg.appendChild(cross);
+  const overlay = svgEl("rect", { x: m.l - 10, y: m.t, width: iw + 20, height: ih, fill: "transparent" });
+  overlay.addEventListener("mousemove", (e) => {
+    const i = nearestIndex(e, svg, W, xs), r = rounds[i];
+    cross.setAttribute("x1", xs[i]); cross.setAttribute("x2", xs[i]); cross.setAttribute("opacity", 1);
+    const lines = series.map((s) => ({ s, v: val(s, r) })).filter((o) => o.v != null).sort((a, b) => b.v - a.v);
+    showTip(`<b>Round ${r} · ${esc(names.get(r) || "")}</b><br>` +
+      lines.map((o) => `<span class="key" style="background:${o.s.color}"></span>${esc(o.s.code)} <span class="tv">${o.v}</span>`).join("<br>"), e);
+  });
+  overlay.addEventListener("mouseleave", () => { cross.setAttribute("opacity", 0); hideTip(); });
+  svg.appendChild(overlay);
+  host.innerHTML = ""; host.appendChild(svg);
+}
+
+/* Lead over P2 (columns) against the points a rival could still score (line) */
+function drawClinchChart(host, rows, clinchRound) {
+  const W = chartWidth(host), H = W < 600 ? 220 : 280, m = { t: 22, r: 16, b: 28, l: 40 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const band = iw / rows.length, bw = Math.min(24, band * 0.6);
+  const ticks = ticksBetween(Math.min(0, ...rows.map((r) => r.lead ?? 0)), Math.max(10, ...rows.map((r) => Math.max(r.lead ?? 0, r.avail))), 5);
+  const lo = ticks[0], hi = ticks[ticks.length - 1];
+  const y = (v) => m.t + ((hi - v) / (hi - lo)) * ih;
+  const xs = rows.map((r, i) => m.l + band * (i + 0.5));
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Championship lead against the points still available" });
+  yAxis(svg, ticks, y, m.l, W - m.r);
+  svg.appendChild(svgEl("line", { x1: m.l, x2: W - m.r, y1: y(0), y2: y(0), stroke: "var(--border-2)", "stroke-width": 1 }));
+  xLabels(svg, rows.map((r) => r.round), xs, H - 8);
+  rows.forEach((r, i) => {
+    if (r.lead == null) return;
+    svg.appendChild(svgEl("path", { d: colPath(xs[i] - bw / 2, bw, y(0), y(r.lead)), fill: r.lead > 0 ? "var(--s1)" : "var(--faint)" }));
+  });
+  svg.appendChild(svgEl("polyline", { points: rows.map((r, i) => `${xs[i]},${y(r.avail)}`).join(" "), fill: "none", stroke: "var(--s2)", "stroke-width": 2, "stroke-linejoin": "round" }));
+  const ci = rows.findIndex((r) => r.round === clinchRound);
+  if (ci >= 0) {
+    const t = svgEl("text", { x: xs[ci], y: y(Math.max(rows[ci].lead, rows[ci].avail)) - 8, "text-anchor": "middle", class: "end-label" });
+    t.textContent = "Clinched"; svg.appendChild(t);
+  }
+  rows.forEach((r, i) => {
+    const hit = svgEl("rect", { x: xs[i] - band / 2, y: m.t, width: band, height: ih, fill: "transparent" });
+    const lead = r.lead == null ? "—" : r.lead > 0 ? `+${r.lead}` : r.lead;
+    const html = `<b>Round ${r.round} · ${esc(r.name)}</b><br>Lead <span class="tv">${lead}</span><br>Still available <span class="tv">${r.avail}</span>`;
+    hit.addEventListener("mousemove", (e) => showTip(html, e));
+    hit.addEventListener("mouseleave", hideTip);
+    svg.appendChild(hit);
+  });
+  host.innerHTML = ""; host.appendChild(svg);
+}
+
+/* Dumbbells per race: grid slot (ring) to finishing position (dot), P1 at the top */
+function drawGridFinish(host, rows) {
+  const W = chartWidth(host), H = W < 600 ? 240 : 300, m = { t: 12, r: 16, b: 28, l: 40 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const band = iw / rows.length;
+  const maxP = Math.max(20, ...rows.map((r) => Math.max(r.grid, r.finish)));
+  const y = (p) => m.t + ((p - 1) / (maxP - 1)) * ih;
+  const xs = rows.map((r, i) => m.l + band * (i + 0.5));
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Grid position and finishing position in every race" });
+  yAxis(svg, [1, 5, 10, 15, 20].filter((p) => p <= maxP), y, m.l, W - m.r, (p) => "P" + p);
+  xLabels(svg, rows.map((r) => r.round), xs, H - 8);
+  rows.forEach((r, i) => {
+    const x = xs[i];
+    if (r.grid !== r.finish) svg.appendChild(svgEl("line", { x1: x, x2: x, y1: y(r.grid), y2: y(r.finish), stroke: "var(--border-2)", "stroke-width": 2, "stroke-linecap": "round" }));
+    svg.appendChild(svgEl("circle", { cx: x, cy: y(r.grid), r: 4, fill: "var(--bg)", stroke: "var(--muted)", "stroke-width": 2 }));
+    svg.appendChild(svgEl("circle", { cx: x, cy: y(r.finish), r: 5, fill: r.dnf ? "var(--faint)" : "var(--s1)", stroke: "var(--bg)", "stroke-width": 2 }));
+    const hit = svgEl("rect", { x: x - band / 2, y: m.t - 6, width: band, height: ih + 12, fill: "transparent" });
+    const gained = r.dnf ? "" : r.grid - r.finish > 0 ? ` (+${r.grid - r.finish})` : r.grid - r.finish < 0 ? ` (${r.grid - r.finish})` : "";
+    const html = `<b>Round ${r.round} · ${esc(r.name)}</b><br>Grid <span class="tv">${esc(r.gridText)}</span> → ${r.dnf ? esc(r.status) : `<span class="tv">P${r.finish}</span>${gained}`}`;
+    hit.addEventListener("mousemove", (e) => showTip(html, e));
+    hit.addEventListener("mouseleave", hideTip);
+    svg.appendChild(hit);
+  });
+  host.innerHTML = ""; host.appendChild(svg);
+}
+
+/* Qualifying gap to pole per round, with pole positions as dots on the baseline */
+function drawPoleGap(host, rows) {
+  const W = chartWidth(host), H = W < 600 ? 200 : 240, m = { t: 12, r: 16, b: 28, l: 48 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const band = iw / rows.length, bw = Math.min(24, band * 0.6);
+  const ticks = ticksBetween(0, Math.max(0.2, ...rows.map((r) => r.qGap ?? 0)), 4);
+  const top = ticks[ticks.length - 1];
+  const y = (v) => m.t + ih - (v / top) * ih;
+  const xs = rows.map((r, i) => m.l + band * (i + 0.5));
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Qualifying gap to pole in every round" });
+  yAxis(svg, ticks, y, m.l, W - m.r, (v) => v.toFixed(top < 1 ? 2 : 1) + "s");
+  svg.appendChild(svgEl("line", { x1: m.l, x2: W - m.r, y1: y(0), y2: y(0), stroke: "var(--border-2)", "stroke-width": 1 }));
+  xLabels(svg, rows.map((r) => r.round), xs, H - 8);
+  rows.forEach((r, i) => {
+    if (r.qGap == null) return;
+    if (r.pole) svg.appendChild(svgEl("circle", { cx: xs[i], cy: y(0), r: 4, fill: "var(--s1)", stroke: "var(--bg)", "stroke-width": 2 }));
+    else svg.appendChild(svgEl("path", { d: colPath(xs[i] - bw / 2, bw, y(0), y(r.qGap)), fill: "var(--s1)" }));
+    const hit = svgEl("rect", { x: xs[i] - band / 2, y: m.t, width: band, height: ih, fill: "transparent" });
+    const html = `<b>Round ${r.round} · ${esc(r.name)}</b><br>Qualified <span class="tv">P${r.quali}</span>${r.pole ? " (pole)" : ` · <span class="tv">+${r.qGap.toFixed(3)}s</span> to pole`}`;
+    hit.addEventListener("mousemove", (e) => showTip(html, e));
+    hit.addEventListener("mouseleave", hideTip);
+    svg.appendChild(hit);
+  });
+  host.innerHTML = ""; host.appendChild(svg);
+}
+
+/* ============================================================
    NEXT-SEASON PREDICTION
    Computed offline by ml/predict_next_season.py from the data warehouse
    (Plackett–Luce strengths → carry-over regression → 10,000 simulated
@@ -1542,13 +2090,12 @@ function paintPrediction(P) {
   const changes = Object.keys(S.lineupChanges || {}).length;
 
   const status = provisional
-    ? `<span class="status-pill open">● Provisional: uses ${T.season} up to round ${T.round} of ${T.roundsInSeason} (${esc(T.race.replace(/ Grand Prix$/, ""))}) and updates as the season finishes</span>`
-    : `<span class="status-pill clinched">● Based on the complete ${T.season} season</span>`;
+    ? `<span class="status-pill open">Provisional: uses ${T.season} up to round ${T.round} of ${T.roundsInSeason} (${esc(T.race.replace(/ Grand Prix$/, ""))}) and updates as the season finishes</span>`
+    : `<span class="status-pill clinched">Based on the complete ${T.season} season</span>`;
 
   view.innerHTML = `
     <div class="page-head">
-      <span class="eyebrow">Machine-learning forecast</span>
-      <h1>${P.season} Championship Prediction</h1>
+      <h1>${P.season} championship prediction</h1>
       <p class="sub">Who is most likely to be champion in ${P.season}, estimated before a ${P.season} car has turned a wheel:
         ${sims} simulated seasons from a model trained on every Grand Prix since ${M.firstSeason}.</p>
       <p class="sub">${status}</p>
@@ -1563,10 +2110,10 @@ function paintPrediction(P) {
     </nav>
 
     <div class="kpi-row">
-      <div class="kpi" style="--kc:${teamColor(fav.team)}"><div class="k">Favourite</div><div class="v">${esc(fav.code)} · ${pctLabel(fav.title)}</div><div class="meta2">${esc(fav.name)}</div></div>
-      <div class="kpi" style="--kc:${teamColor(favTeam.name)}"><div class="k">Constructors' favourite</div><div class="v">${esc(shortTeam(favTeam.name))} · ${pctLabel(favTeam.title)}</div><div class="meta2">title chance</div></div>
-      <div class="kpi" style="--kc:var(--s1)"><div class="k">Simulated seasons</div><div class="v">${sims}</div><div class="meta2">× ${S.races} races each</div></div>
-      <div class="kpi" style="--kc:var(--s3)"><div class="k">Track record</div><div class="v">${pctInt(sm.model.coverage)}</div><div class="meta2">inside the 80% range, ${btFirst}–${String(btLast).slice(2)}</div></div>
+      <div class="kpi"><div class="k">Favourite</div><div class="v">${esc(fav.code)} · ${pctLabel(fav.title)}</div><div class="meta2">${esc(fav.name)}</div></div>
+      <div class="kpi"><div class="k">Constructors' favourite</div><div class="v">${esc(shortTeam(favTeam.name))} · ${pctLabel(favTeam.title)}</div><div class="meta2">title chance</div></div>
+      <div class="kpi"><div class="k">Simulated seasons</div><div class="v">${sims}</div><div class="meta2">× ${S.races} races each</div></div>
+      <div class="kpi"><div class="k">Track record</div><div class="v">${pctInt(sm.model.coverage)}</div><div class="meta2">inside the 80% range, ${btFirst}–${String(btLast).slice(2)}</div></div>
     </div>
 
     <h2 class="section-title" id="pr-forecast">The forecast</h2>
@@ -1656,10 +2203,10 @@ function paintPrediction(P) {
     </div>
 
     <div class="kpi-row" style="margin-top:14px">
-      <div class="kpi" style="--kc:var(--s1)"><div class="k">Car carry-over</div><div class="v">${pctInt(co.team_prev)}</div><div class="meta2">of last year's advantage</div></div>
-      <div class="kpi" style="--kc:var(--s3)"><div class="k">Driver carry-over</div><div class="v">${pctInt(co.driver_edge)}</div><div class="meta2">of the edge over a teammate</div></div>
-      <div class="kpi" style="--kc:var(--s4)"><div class="k">Rookie start</div><div class="v">${num2(co.rookie)}</div><div class="meta2">strength vs the car alone</div></div>
-      <div class="kpi" style="--kc:var(--s5)"><div class="k">Winter surprise</div><div class="v">±${M.sigmaTeam.toFixed(2)}</div><div class="meta2">car · ±${M.sigmaDriver.toFixed(2)} driver</div></div>
+      <div class="kpi"><div class="k">Car carry-over</div><div class="v">${pctInt(co.team_prev)}</div><div class="meta2">of last year's advantage</div></div>
+      <div class="kpi"><div class="k">Driver carry-over</div><div class="v">${pctInt(co.driver_edge)}</div><div class="meta2">of the edge over a teammate</div></div>
+      <div class="kpi"><div class="k">Rookie start</div><div class="v">${num2(co.rookie)}</div><div class="meta2">strength vs the car alone</div></div>
+      <div class="kpi"><div class="k">Winter surprise</div><div class="v">±${M.sigmaTeam.toFixed(2)}</div><div class="meta2">car · ±${M.sigmaDriver.toFixed(2)} driver</div></div>
     </div>
 
     <div class="dash-grid">
@@ -1786,14 +2333,10 @@ function paintPrediction(P) {
       <li><b>A probability, not a pick:</b> even the favourite, at ${pctLabel(fav.title)}, fails to win the title in most simulated seasons.</li>
     </ul>
 
-    <div class="pipeline">
-      <span>Pipeline:</span>
-      <span class="chip">Jolpica F1 API + Ergast archive</span>
-      <span class="chip">SQLite data warehouse</span>
-      <span class="chip">Plackett–Luce · NumPy/SciPy</span>
-      <span class="chip">${sims} Monte Carlo seasons</span>
-      <span>generated <b>${generated}</b> by <b>ml/predict_next_season.py</b></span>
-    </div>
+    <p class="pipeline">
+      Generated ${generated} by ml/predict_next_season.py from the Jolpica F1 API and the Ergast archive:
+      a Plackett–Luce model (NumPy/SciPy) and ${sims} Monte Carlo seasons.
+    </p>
   `;
 
   $("#prRange").innerHTML = rangeList(D);
@@ -1811,6 +2354,11 @@ function paintPrediction(P) {
   calcSel.addEventListener("change", paintCalc);
   paintCalc();
 
+  wireJumpLinks();
+}
+
+/* in-page contents buttons: <button data-jump="section-id"> */
+function wireJumpLinks() {
   const smooth = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
   view.querySelectorAll("[data-jump]").forEach((b) => b.addEventListener("click", () =>
     document.getElementById(b.dataset.jump)?.scrollIntoView({ behavior: smooth, block: "start" })));
@@ -1929,7 +2477,12 @@ async function loadSidebarDrivers() {
   try {
     const data = await getJSON("current/driverstandings.json");
     const list = data.MRData.StandingsTable.StandingsLists[0];
-    $("#brandSeason").textContent = data.MRData.StandingsTable.season;
+    const season = data.MRData.StandingsTable.season;
+    $("#brandSeason").textContent = season;
+    if (list && championVisible(season)) {
+      $("#champLabel").textContent = `${season} Champion`;
+      $("#champLink").hidden = false;
+    }
     if (!list) { sel.innerHTML = `<option value="">No drivers yet</option>`; return; }
     sel.innerHTML = `<option value="">Select a driver…</option>` +
       list.DriverStandings.map((s) =>
@@ -1968,6 +2521,7 @@ function router() {
   else if ((m = hash.match(/^#\/driver\/(.+)$/))) { setActiveNav(""); renderDriver(decodeURIComponent(m[1])); }
   else if (hash.startsWith("#/season")) { setActiveNav("season"); setActiveDriver(null); renderSeason(); }
   else if (hash.startsWith("#/standings")) { setActiveNav("standings"); setActiveDriver(null); renderStandings(); }
+  else if (hash.startsWith("#/champion")) { setActiveNav("champion"); setActiveDriver(null); renderChampion(); }
   else if (hash.startsWith("#/forecast")) { setActiveNav("forecast"); setActiveDriver(null); renderForecast(); }
   else if (hash.startsWith("#/prediction")) { setActiveNav("prediction"); setActiveDriver(null); renderPrediction(); }
   else { setActiveNav("latest"); setActiveDriver(null); renderLatest(); }
@@ -1975,7 +2529,7 @@ function router() {
 }
 
 /* ============================================================
-   Sidebar toggle (mobile) + theme toggle
+   Sidebar toggle (mobile)
    ============================================================ */
 const sidebar = $("#sidebar"), scrim = $("#scrim"), menuToggle = $("#menuToggle");
 function openSidebar() { sidebar.classList.add("is-open"); scrim.hidden = false; menuToggle.setAttribute("aria-expanded", "true"); }
@@ -1984,19 +2538,47 @@ menuToggle.addEventListener("click", () => sidebar.classList.contains("is-open")
 scrim.addEventListener("click", closeSidebar);
 view.addEventListener("click", (e) => { if (e.target.closest("a")) closeSidebar(); });
 
-const themeToggle = $("#themeToggle");
-function applyTheme(t) {
-  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
-  else document.documentElement.removeAttribute("data-theme");
-  try { localStorage.setItem("f1hub-theme", t); } catch (e) {}
+/* ============================================================
+   Settings: background and accent colour. readDisplay() and
+   applyDisplay() live in index.html, so the saved choice is applied
+   before the first paint; this wires up the dialog that changes it.
+   Choices are kept in this browser's localStorage.
+   ============================================================ */
+const settingsDlg = $("#settings"), settingsForm = $("#settingsForm");
+function formDisplay() {
+  const f = settingsForm.elements;
+  return { background: f.background.value || "system", custom: f.custom.value, accent: f.accent.value };
 }
-function currentTheme() {
-  const set = document.documentElement.getAttribute("data-theme");
-  if (set) return set;
-  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+function fillSettings(s) {
+  const f = settingsForm.elements;
+  f.background.value = s.background || "system";
+  if (/^#[0-9a-f]{6}$/i.test(s.custom || "")) f.custom.value = s.custom;
+  f.accent.value = s.accent || f.accent[0].value;   // the first swatch is the default
+  paintCustomOption();
 }
-themeToggle.addEventListener("click", () => applyTheme(currentTheme() === "dark" ? "light" : "dark"));
-try { const saved = localStorage.getItem("f1hub-theme"); if (saved) applyTheme(saved); } catch (e) {}
+/* the "Custom" choice previews the picked colour, with readable text on it */
+function paintCustomOption() {
+  const v = settingsForm.elements.custom.value, opt = $(".bg-option--custom");
+  opt.style.setProperty("--opt-bg", v);
+  opt.style.setProperty("--opt-fg", luma(v) > 0.179 ? "#0f1419" : "#e7e9ea");
+}
+function saveDisplay(s) {
+  applyDisplay(s);
+  try { localStorage.setItem(DISPLAY_KEY, JSON.stringify(s)); } catch (e) {}
+}
+$("#settingsOpen").addEventListener("click", () => { fillSettings(readDisplay()); closeSidebar(); settingsDlg.showModal(); });
+settingsForm.addEventListener("change", () => saveDisplay(formDisplay()));
+settingsForm.elements.custom.addEventListener("input", () => {
+  settingsForm.elements.background.value = "custom";
+  paintCustomOption();
+  saveDisplay(formDisplay());
+});
+$("#settingsReset").addEventListener("click", () => {
+  try { localStorage.removeItem(DISPLAY_KEY); localStorage.removeItem("f1hub-theme"); } catch (e) {}
+  applyDisplay({});
+  fillSettings({});
+});
+settingsDlg.addEventListener("click", (e) => { if (e.target === settingsDlg) settingsDlg.close(); });   // backdrop
 
 /* ============================================================
    Boot

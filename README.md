@@ -9,6 +9,13 @@ open any driver's season data (stats + charts).
 - **Latest Race** (home) — podium + full classification for the most recent Grand Prix.
 - **Season** — the full calendar; click any completed round to see its results.
 - **Standings** — the current drivers' championship.
+- **2026 Champion** — appears once the title is decided (`CHAMPION` at the top of
+  `app.js`). The champion's season in numbers (wins, poles and poles converted,
+  laps led, fastest laps, hat-tricks, grand slams, sprint points, best comeback,
+  clinch round, teammate head-to-head) plus an exploratory analysis: points race
+  against the closest rivals, lead against the points still available, grid-to-finish
+  for every race, finishing-position distribution, track position by lap, laps led,
+  qualifying gap to pole, summary statistics and a race-by-race log.
 - **Race Analytics** — a dashboard (pick any completed round) with:
   - KPI tiles (winner, pole, fastest lap, biggest climber, lead changes, DNFs);
   - positions gained/lost and points-by-team bar charts;
@@ -29,7 +36,15 @@ open any driver's season data (stats + charts).
 - **Drivers** (sidebar dropdown) — pick a driver for their season stats, a
   grid-vs-finish chart, a points-progression chart (with a dashed season-end
   projection), and a race-by-race table.
-- Dark / light theme toggle, responsive layout, F1 team colours and flags.
+- **Settings** (sidebar) — background (match system, light, dim, black or any custom
+  colour) and accent colour, saved in the browser. Responsive layout, F1 team colours.
+
+### Declaring the champion
+
+Once the drivers' title is mathematically decided, set `confirmed: true` in
+`CHAMPION` at the top of `app.js` (with that `season`). The sidebar then shows
+"<season> Champion" for whoever leads the standings. It hides itself again when
+the next season's data arrives, because the season no longer matches.
 
 ## The data pipeline (data-engineering layer)
 
@@ -92,7 +107,8 @@ FROM pit_stops WHERE season = 2026 GROUP BY round ORDER BY round;
 ```
 
 `server.py` exposes the database as an API with the same paths and JSON shape as
-Jolpica (`/api/f1/current/last/results.json`, `/api/f1/2026/17/laps.json`, …),
+Jolpica (`/api/f1/current/last/results.json`, `/api/f1/2026/17/laps.json`,
+`/api/f1/2026/17/drivers/antonelli/laps.json`, …),
 plus `/api/health`. That's why the frontend can switch sources without any other
 changes. Backfill another season with `python ingest.py --season 2025`.
 
@@ -144,7 +160,7 @@ successor to the Ergast API (`https://api.jolpi.ca/ergast/f1`). It's used by
 
 | File | Purpose |
 |------|---------|
-| `index.html` | Page shell + sidebar |
+| `index.html` | Page shell, sidebar, settings dialog, and the script that applies saved display settings before the first paint |
 | `styles.css` | Theme tokens and all styling |
 | `app.js` | Data fetching, routing, views, and the SVG charts |
 | `ingest.py` | ETL: Jolpica API → `data/f1.db` |

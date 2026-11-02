@@ -71,11 +71,14 @@ def main() -> int:
         rounds = [r for (r,) in db.execute("SELECT round FROM races WHERE season = ? ORDER BY round", (season,))]
         drivers = [d for (d,) in db.execute(
             "SELECT DISTINCT driver_id FROM results WHERE season = ? ORDER BY driver_id", (season,))]
+        starters = db.execute("SELECT round, driver_id FROM results WHERE season = ? ORDER BY round, driver_id",
+                              (season,)).fetchall()
 
     # every path app.js requests, for every round (empty files for rounds still to run)
     paths = ["current.json", "current/results.json", "current/driverstandings.json", "current/last/results.json"]
     paths += [f"current/{r}/{name}.json" for r in rounds for name in ROUND_FILES]
     paths += [f"current/drivers/{d}/results.json" for d in drivers]
+    paths += [f"current/{r}/drivers/{d}/laps.json" for r, d in starters]   # the champion page's laps led
 
     if DIST.exists():
         shutil.rmtree(DIST)
