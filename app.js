@@ -1894,12 +1894,14 @@ function xLabels(svg, labels, xs, yy) {
     const t = svgEl("text", { x: xs[i], y: yy, "text-anchor": "middle" }); t.textContent = l; svg.appendChild(t);
   });
 }
-/* draw at the card's real width (up to 900), so chart text stays readable on phones */
-function chartWidth(host) { return Math.round(Math.min(900, Math.max(300, host.clientWidth || 900))); }
+/* draw at the card's real width, so chart text stays the same size on phones and wide screens */
+function chartWidth(host) { return Math.round(Math.min(1100, Math.max(300, host.clientWidth || 900))); }
+/* round tick values covering [lo, hi]: the first tick is at or below lo, the last at or above hi */
 function ticksBetween(lo, hi, count) {
-  const step = niceStep((hi - lo) / count || 1);
-  const out = [];
-  for (let v = Math.floor(lo / step) * step; v <= hi + step * 0.01; v += step) out.push(Math.round(v * 1e6) / 1e6);
+  const raw = (hi - lo) / count || 1, pow = 10 ** Math.floor(Math.log10(raw)), n = raw / pow;
+  const step = (n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10) * pow;   // niceStep without its floor of 1
+  const last = Math.ceil(hi / step - 1e-9) * step, out = [];
+  for (let v = Math.floor(lo / step + 1e-9) * step; v <= last + step * 0.01; v += step) out.push(Math.round(v * 1e6) / 1e6);
   return out;
 }
 
@@ -2539,22 +2541,30 @@ scrim.addEventListener("click", closeSidebar);
 view.addEventListener("click", (e) => { if (e.target.closest("a")) closeSidebar(); });
 
 /* ============================================================
-   Settings: background and accent colour. readDisplay() and
-   applyDisplay() live in index.html, so the saved choice is applied
-   before the first paint; this wires up the dialog that changes it.
-   Choices are kept in this browser's localStorage.
+   Settings: background (colour or an uploaded wallpaper) and accent
+   colour. readDisplay(), readWallpaper() and applyDisplay() live in
+   index.html, so the saved choice is applied before the first paint;
+   this wires up the dialog that changes it. Everything is kept in this
+   browser's localStorage: the choices under f1hub-display, the
+   wallpaper image under f1hub-wallpaper.
    ============================================================ */
 const settingsDlg = $("#settings"), settingsForm = $("#settingsForm");
+const WALLPAPER_MAX_PX = 2048;
+let display = readDisplay();
+
 function formDisplay() {
   const f = settingsForm.elements;
-  return { background: f.background.value || "system", custom: f.custom.value, accent: f.accent.value };
+  return { ...display, background: f.background.value || "system", custom: f.custom.value,
+           accent: f.accent.value, panel: Number(f.panel.value) };
 }
 function fillSettings(s) {
   const f = settingsForm.elements;
   f.background.value = s.background || "system";
   if (/^#[0-9a-f]{6}$/i.test(s.custom || "")) f.custom.value = s.custom;
   f.accent.value = s.accent || f.accent[0].value;   // the first swatch is the default
+  f.panel.value = s.panel || 85;
   paintCustomOption();
+  paintWallpaperOption();
 }
 /* the "Custom" choice previews the picked colour, with readable text on it */
 function paintCustomOption() {
@@ -2562,21 +2572,91 @@ function paintCustomOption() {
   opt.style.setProperty("--opt-bg", v);
   opt.style.setProperty("--opt-fg", luma(v) > 0.179 ? "#0f1419" : "#e7e9ea");
 }
+/* the "Wallpaper" choice previews the uploaded image; its controls show when relevant */
+function paintWallpaperOption() {
+  const url = readWallpaper(), opt = $(".bg-option--wallpaper");
+  opt.style.backgroundImage = url ? `url("${url}")` : "";
+  opt.classList.toggle("has-image", !!url);
+  $("#wallpaperPick").textContent = url ? "Change image…" : "Upload image…";
+  $("#wallpaperRemove").hidden = !url;
+  $("#panelRow").hidden = !url || settingsForm.elements.background.value !== "wallpaper";
+}
+function wallpaperNote(msg) { $("#wallpaperNote").textContent = msg; }
 function saveDisplay(s) {
+  display = s;
   applyDisplay(s);
   try { localStorage.setItem(DISPLAY_KEY, JSON.stringify(s)); } catch (e) {}
+  paintWallpaperOption();
 }
-$("#settingsOpen").addEventListener("click", () => { fillSettings(readDisplay()); closeSidebar(); settingsDlg.showModal(); });
-settingsForm.addEventListener("change", () => saveDisplay(formDisplay()));
+
+/* Shrink an uploaded image to a JPEG small enough for localStorage, and judge from
+   its average brightness whether light or dark panels suit it. */
+async function prepareWallpaper(file) {
+  const img = new Image(), src = URL.createObjectURL(file);
+  try { img.src = src; await img.decode(); }
+  finally { URL.revokeObjectURL(src); }
+  const scale = Math.min(1, WALLPAPER_MAX_PX / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement("canvas");
+  c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  const t = document.createElement("canvas");
+  t.width = t.height = 16;
+  const tc = t.getContext("2d");
+  tc.drawImage(c, 0, 0, 16, 16);
+  const px = tc.getImageData(0, 0, 16, 16).data;
+  let lum = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    lum += luma("#" + [px[i], px[i + 1], px[i + 2]].map((v) => v.toString(16).padStart(2, "0")).join(""));
+  }
+  let q = 0.85, url = c.toDataURL("image/jpeg", q);
+  while (url.length > 1.8e6 && q > 0.45) { q -= 0.1; url = c.toDataURL("image/jpeg", q); }
+  return { url, tone: lum / (px.length / 4) > 0.3 ? "light" : "dark" };
+}
+
+$("#settingsOpen").addEventListener("click", () => {
+  display = readDisplay();
+  fillSettings(display);
+  wallpaperNote("");
+  closeSidebar();
+  settingsDlg.showModal();
+});
+settingsForm.addEventListener("change", (e) => {
+  if (e.target.id === "wallpaperFile") return;   // handled on its own below
+  if (e.target.name === "background" && e.target.value === "wallpaper" && !readWallpaper()) $("#wallpaperFile").click();
+  saveDisplay(formDisplay());
+});
 settingsForm.elements.custom.addEventListener("input", () => {
   settingsForm.elements.background.value = "custom";
   paintCustomOption();
   saveDisplay(formDisplay());
 });
+settingsForm.elements.panel.addEventListener("input", () => saveDisplay(formDisplay()));
+$("#wallpaperPick").addEventListener("click", () => $("#wallpaperFile").click());
+$("#wallpaperFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  wallpaperNote("Preparing the image…");
+  let prepared;
+  try { prepared = await prepareWallpaper(file); }
+  catch (err) { wallpaperNote("That file couldn't be read as an image."); return; }
+  try { localStorage.setItem(WALLPAPER_KEY, prepared.url); }
+  catch (err) { wallpaperNote("That image is too big to save in this browser. Try a smaller one."); return; }
+  settingsForm.elements.background.value = "wallpaper";
+  saveDisplay({ ...formDisplay(), wallpaperTone: prepared.tone });
+  wallpaperNote("");
+});
+$("#wallpaperRemove").addEventListener("click", () => {
+  try { localStorage.removeItem(WALLPAPER_KEY); } catch (e) {}
+  if (settingsForm.elements.background.value === "wallpaper") settingsForm.elements.background.value = "system";
+  saveDisplay(formDisplay());
+});
 $("#settingsReset").addEventListener("click", () => {
-  try { localStorage.removeItem(DISPLAY_KEY); localStorage.removeItem("f1hub-theme"); } catch (e) {}
+  try { [DISPLAY_KEY, WALLPAPER_KEY, "f1hub-theme"].forEach((k) => localStorage.removeItem(k)); } catch (e) {}
+  display = {};
   applyDisplay({});
   fillSettings({});
+  wallpaperNote("");
 });
 settingsDlg.addEventListener("click", (e) => { if (e.target === settingsDlg) settingsDlg.close(); });   // backdrop
 

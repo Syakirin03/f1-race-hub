@@ -36,8 +36,9 @@ open any driver's season data (stats + charts).
 - **Drivers** (sidebar dropdown) — pick a driver for their season stats, a
   grid-vs-finish chart, a points-progression chart (with a dashed season-end
   projection), and a race-by-race table.
-- **Settings** (sidebar) — background (match system, light, dim, black or any custom
-  colour) and accent colour, saved in the browser. Responsive layout, F1 team colours.
+- **Settings** (sidebar) — background (match system, light, dim, black, any custom
+  colour, or an uploaded wallpaper image behind see-through panels with adjustable
+  opacity) and accent colour, saved in the browser. Responsive layout, F1 team colours.
 
 ### Declaring the champion
 

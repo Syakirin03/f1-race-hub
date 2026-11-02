@@ -36,7 +36,7 @@
   --font: "TwitterChirp", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --radius: 16px;
   --radius-sm: 12px;
-  --sidebar-w: 264px;
+  --sidebar-w: 240px;
 }
 
 @media (prefers-color-scheme: light) {
@@ -96,7 +96,7 @@ button, select, input { font: inherit; color: inherit; }
 /* ============================================================
    Layout
    ============================================================ */
-.layout { display: flex; max-width: 1300px; min-height: 100%; margin: 0 auto; }
+.layout { display: flex; min-height: 100%; }
 
 .topbar {
   display: none; align-items: center; gap: 12px;
@@ -118,44 +118,44 @@ button, select, input { font: inherit; color: inherit; }
 .sidebar {
   width: var(--sidebar-w); flex: 0 0 var(--sidebar-w);
   display: flex; flex-direction: column;
-  padding: 8px 12px 12px;
+  padding: 16px 12px;
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
-  background: var(--bg);
+  background: var(--bg); border-right: 1px solid var(--border);
 }
 .brand {
   display: flex; align-items: baseline; gap: 8px;
-  padding: 14px 12px 12px; font-size: 20px; font-weight: 800;
+  padding: 0 10px 16px; font-size: 18px; font-weight: 800;
 }
-.brand__season { font-size: 15px; font-weight: 400; color: var(--muted); }
+.brand__season { font-size: 14px; font-weight: 400; color: var(--muted); }
 
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav__link {
-  display: flex; align-items: center; gap: 16px; width: fit-content;
-  padding: 10px 20px 10px 12px; border-radius: 999px;
-  font-size: 18px; color: var(--fg);
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 8px 10px; border-radius: 10px;
+  font-size: 15px; color: var(--muted);
   background: none; border: 0; cursor: pointer; text-align: left;
 }
-.nav__link svg { width: 24px; height: 24px; flex: 0 0 24px; }
-.nav__link:hover { background: var(--surface-2); }
-.nav__link.is-active { font-weight: 700; }
-.nav__link.is-active svg path, .nav__link.is-active svg rect, .nav__link.is-active svg circle { stroke-width: 2.4; }
+.nav__link svg { width: 20px; height: 20px; flex: 0 0 20px; }
+.nav__link:hover { background: var(--surface-2); color: var(--fg); }
+.nav__link.is-active { background: var(--surface-2); color: var(--fg); font-weight: 700; }
 
-.nav-group { padding: 18px 0 8px; }
-.nav-group__head { display: block; padding: 0 12px 8px; font-size: 13px; color: var(--muted); }
+.nav-group { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.nav-group__head { display: block; padding: 0 10px 8px; font-size: 13px; color: var(--muted); }
 .driver-select-wrap { position: relative; }
 .driver-select {
   -webkit-appearance: none; appearance: none; cursor: pointer; width: 100%;
-  background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
-  padding: 9px 36px 9px 14px; font-size: 15px;
+  background: transparent; border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 34px 8px 10px; font-size: 14px;
 }
+.driver-select option { background: var(--bg); color: var(--fg); }
 .driver-select:hover { border-color: var(--border-2); }
 .driver-select-wrap__chev {
-  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
   width: 18px; height: 18px; color: var(--muted); pointer-events: none;
 }
 
-.sidebar__foot { margin-top: auto; padding-top: 12px; display: flex; flex-direction: column; gap: 6px; }
-.sidebar__src { padding: 0 12px; font-size: 13px; color: var(--muted); }
+.sidebar__foot { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+.sidebar__src { padding: 4px 10px 0; font-size: 12px; color: var(--muted); }
 .sidebar__src[data-mode]::before {
   content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
   margin-right: 7px; vertical-align: 2px; background: var(--faint);
@@ -165,19 +165,31 @@ button, select, input { font: inherit; color: inherit; }
 
 .scrim { display: none; }
 
-/* ---- Main column ---- */
-.main-col {
-  flex: 1 1 auto; min-width: 0; max-width: 1000px;
-  display: flex; flex-direction: column;
-  border-left: 1px solid var(--border); border-right: 1px solid var(--border);
-}
-.main { flex: 1 1 auto; min-width: 0; padding: 24px 28px 56px; }
+/* ---- Main column: content centred in the space beside the sidebar ---- */
+.main-col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.main, .legal { width: 100%; max-width: 1120px; margin: 0 auto; }
+.main { flex: 1 1 auto; min-width: 0; padding: 28px 32px 56px; }
 .main:focus { outline: none; }
 .legal {
-  padding: 16px 28px 24px; border-top: 1px solid var(--border);
+  padding: 16px 32px 24px; border-top: 1px solid var(--border);
   color: var(--muted); font-size: 12px; line-height: 1.5;
 }
 .legal a { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ---- Wallpaper (Settings): the image behind translucent, blurred panels ---- */
+:root[data-wallpaper] body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1;
+  background: var(--wallpaper) center / cover no-repeat;
+}
+:root[data-wallpaper] .sidebar,
+:root[data-wallpaper] .main,
+:root[data-wallpaper] .legal,
+:root[data-wallpaper] .topbar {
+  background: color-mix(in srgb, var(--bg) var(--panel, 85%), transparent);
+  -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+}
+:root[data-wallpaper] .sidebar { border-right-color: transparent; }
+:root[data-wallpaper] .legal { border-top-color: transparent; }
 
 /* ============================================================
    Shared pieces
@@ -505,6 +517,13 @@ dialog.settings::backdrop { background: rgba(91, 112, 131, .4); }
 .bg-option--dim    { background: #15202b; color: #f7f9f9; }
 .bg-option--dark   { background: #000000; color: #e7e9ea; border-color: #2f3336; }
 .bg-option--custom { background: var(--opt-bg, #1c2621); color: var(--opt-fg, #e7e9ea); }
+.bg-option--wallpaper { background: var(--surface-2) center / cover no-repeat; }
+.bg-option--wallpaper.has-image { color: #ffffff; text-shadow: 0 1px 3px rgba(0, 0, 0, .7); }
+
+.wallpaper-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.wallpaper-note { font-size: 13px; color: var(--muted); }
+.panel-range { display: flex; align-items: center; gap: 12px; margin-top: 12px; font-size: 14px; }
+.panel-range input { flex: 1 1 auto; accent-color: var(--accent); cursor: pointer; }
 .bg-option input[type="color"] {
   margin-left: auto; width: 32px; height: 28px; padding: 0; cursor: pointer;
   border: 1px solid currentColor; border-radius: 8px; background: none;
@@ -525,8 +544,9 @@ dialog.settings::backdrop { background: rgba(91, 112, 131, .4); }
    Responsive
    ============================================================ */
 @media (max-width: 1100px) {
-  :root { --sidebar-w: 232px; }
-  .nav__link { font-size: 16px; gap: 14px; }
+  :root { --sidebar-w: 220px; }
+  .main { padding: 24px 24px 48px; }
+  .legal { padding: 16px 24px 24px; }
 }
 @media (max-width: 860px) {
   .layout { flex-direction: column; }

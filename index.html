@@ -7,11 +7,18 @@
   <meta name="description" content="Formula 1 race results, season schedule, championship standings, race analytics, a title forecast and a machine-learning prediction for next season.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23000'/%3E%3Crect x='9' y='6' width='5' height='20' rx='2' fill='%23e10600'/%3E%3Crect x='17' y='6' width='7' height='5' rx='2' fill='%23e10600'/%3E%3Crect x='17' y='14' width='5' height='4' rx='2' fill='%23e10600'/%3E%3C/svg%3E">
   <script>
-    /* Display settings (background + accent) from the Settings dialog, applied here,
-       before the first paint, so the page never flashes the wrong background.
-       app.js reuses readDisplay() and applyDisplay() when the settings change. */
+    /* Display settings (background, wallpaper, accent) from the Settings dialog, applied
+       here, before the first paint, so the page never flashes the wrong background.
+       app.js reuses these functions when the settings change. */
     var DISPLAY_KEY = "f1hub-display";
+    var WALLPAPER_KEY = "f1hub-wallpaper";   // the uploaded image, as a JPEG data URL
     var BACKGROUNDS = { light: "#ffffff", dim: "#15202b", dark: "#000000" };
+    function readWallpaper() {
+      try {
+        var w = localStorage.getItem(WALLPAPER_KEY) || "";
+        return /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/.test(w) ? w : null;
+      } catch (e) { return null; }
+    }
     function readDisplay() {
       var s = {};
       try {
@@ -30,8 +37,21 @@
     }
     function applyDisplay(s) {
       var root = document.documentElement, isHex = /^#[0-9a-f]{6}$/i;
+      var wall = s.background === "wallpaper" ? readWallpaper() : null;
       var bg = BACKGROUNDS[s.background] || (s.background === "custom" && isHex.test(s.custom) ? s.custom : null);
-      if (bg) {
+      if (wall) {   // the page sits on translucent panels over the image
+        root.setAttribute("data-wallpaper", "");
+        root.style.setProperty("--wallpaper", 'url("' + wall + '")');
+        root.style.setProperty("--panel", Math.min(100, Math.max(30, Number(s.panel) || 85)) + "%");
+      } else {
+        root.removeAttribute("data-wallpaper");
+        root.style.removeProperty("--wallpaper");
+        root.style.removeProperty("--panel");
+      }
+      if (wall) {
+        root.setAttribute("data-theme", s.wallpaperTone === "light" ? "light" : "dark");   // picked from the image's brightness
+        root.style.removeProperty("--bg");
+      } else if (bg) {
         root.setAttribute("data-theme", luma(bg) > 0.179 ? "light" : "dark");   // dark text on light backgrounds
         root.style.setProperty("--bg", bg);
       } else {   // match the system setting
@@ -149,7 +169,18 @@
           <label class="bg-option bg-option--dark"><input type="radio" name="background" value="dark"><span>Black</span></label>
           <label class="bg-option bg-option--custom"><input type="radio" name="background" value="custom"><span>Custom</span>
             <input type="color" name="custom" value="#1c2621" aria-label="Custom background colour"></label>
+          <label class="bg-option bg-option--wallpaper"><input type="radio" name="background" value="wallpaper"><span>Wallpaper</span></label>
         </div>
+        <div class="wallpaper-row">
+          <button type="button" class="btn" id="wallpaperPick">Upload image…</button>
+          <button type="button" class="btn" id="wallpaperRemove" hidden>Remove</button>
+          <input type="file" id="wallpaperFile" accept="image/*" hidden>
+          <span class="wallpaper-note" id="wallpaperNote" role="status"></span>
+        </div>
+        <label class="panel-range" id="panelRow" hidden>
+          <span>Panel opacity</span>
+          <input type="range" name="panel" min="30" max="100" step="5" value="85">
+        </label>
       </fieldset>
 
       <fieldset>
