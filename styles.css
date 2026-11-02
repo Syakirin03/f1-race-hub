@@ -85,7 +85,9 @@ body {
   font-size: 15px;
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+  caret-color: transparent;   /* no blinking text cursor in plain text (e.g. with caret browsing, F7) */
 }
+input, textarea, [contenteditable="true"] { caret-color: auto; }
 h1, h2, h3, h4 { margin: 0; font-weight: 800; text-wrap: balance; }
 a { color: inherit; text-decoration: none; }
 button, select, input { font: inherit; color: inherit; }
@@ -165,9 +167,9 @@ button, select, input { font: inherit; color: inherit; }
 
 .scrim { display: none; }
 
-/* ---- Main column: content centred in the space beside the sidebar ---- */
+/* ---- Main column: content starts right beside the sidebar ---- */
 .main-col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
-.main, .legal { width: 100%; max-width: 1120px; margin: 0 auto; }
+.main, .legal { width: 100%; max-width: 1400px; }
 .main { flex: 1 1 auto; min-width: 0; padding: 28px 32px 56px; }
 .main:focus { outline: none; }
 .legal {

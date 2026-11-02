@@ -1895,7 +1895,7 @@ function xLabels(svg, labels, xs, yy) {
   });
 }
 /* draw at the card's real width, so chart text stays the same size on phones and wide screens */
-function chartWidth(host) { return Math.round(Math.min(1100, Math.max(300, host.clientWidth || 900))); }
+function chartWidth(host) { return Math.round(Math.min(1400, Math.max(300, host.clientWidth || 900))); }
 /* round tick values covering [lo, hi]: the first tick is at or below lo, the last at or above hi */
 function ticksBetween(lo, hi, count) {
   const raw = (hi - lo) / count || 1, pow = 10 ** Math.floor(Math.log10(raw)), n = raw / pow;
