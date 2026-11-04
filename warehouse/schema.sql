@@ -97,7 +97,7 @@ CREATE TABLE fct_result (
     is_finished       INTEGER,               -- took the flag (finished or lapped)
     is_dnf            INTEGER,               -- started, didn't finish, not disqualified
     is_shared_drive   INTEGER DEFAULT 0,     -- 1950s-70s: driver had two entries in one race
-    source            TEXT NOT NULL
+    source            TEXT NOT NULL          -- 'csv', 'legacy' (restored non-starter) or 'live'
 );
 CREATE INDEX idx_result_race   ON fct_result (race_key);
 CREATE INDEX idx_result_driver ON fct_result (driver_key, race_key);

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-F1 data warehouse build:  data/*.csv (1950-2024)  +  data/f1.db (live seasons)  ->  data/warehouse.db
+F1 data warehouse build:  data/*.csv  +  data/warehouse_legacy.db (detail the CSVs dropped)
+                          +  data/f1.db (rounds newer than the CSVs)  ->  data/warehouse.db
 
 Layers
   raw_*    bronze  the CSV files exactly as delivered (every column TEXT), for lineage
@@ -28,6 +29,7 @@ HERE = Path(__file__).resolve().parent
 DATA = HERE.parent / "data"
 WAREHOUSE = DATA / "warehouse.db"
 LIVE_DB = DATA / "f1.db"
+LEGACY_DB = DATA / "warehouse_legacy.db"
 NULL_MARKERS = {"\\N", ""}
 
 CSV_TABLES = ["seasons", "circuits", "drivers", "constructors", "status", "races", "results",
@@ -144,7 +146,7 @@ def load_raw(db, dq):
             dq.log("clean", f"{name}: values with stray whitespace trimmed", spaces)
 
 
-def quality_report(db, dq, csv_max):
+def quality_report(db, dq):
     q = lambda sql: db.execute(sql).fetchone()[0]
     dq.log("clean", "results: shared drives flagged (excluded from ML)",
            q("SELECT COUNT(*) FROM fct_result WHERE is_shared_drive = 1"), "1950s-70s shared cars")
@@ -164,12 +166,17 @@ def quality_report(db, dq, csv_max):
         n = q(f"SELECT COUNT(*) FROM {table} WHERE "
               + ("source = 'live'" if table in ("dim_race", "fct_result", "fct_qualifying")
                  else f"race_key IN (SELECT race_key FROM dim_race WHERE source = 'live')"))
-        dq.log("live", f"{table}: rows from f1.db (seasons > {csv_max})", n)
+        dq.log("live", f"{table}: rows from f1.db (rounds not in the CSVs)", n)
     dq.log("live", "fct_lap: rows from f1.db",
            q("SELECT COUNT(*) FROM fct_lap WHERE race_key IN (SELECT race_key FROM dim_race WHERE source = 'live')"))
+    dq.log("legacy", "fct_result: non-starter rows restored", q("SELECT COUNT(*) FROM fct_result WHERE source = 'legacy'"))
+    dq.log("legacy", "fct_result: statuses restored", q(
+        "SELECT COUNT(*) FROM fct_result r JOIN raw_results x ON CAST(x.resultId AS INTEGER) = r.result_key "
+        "JOIN raw_status s ON s.statusId = x.statusId JOIN dim_status d ON d.status_key = r.status_key "
+        "WHERE r.source = 'csv' AND d.status <> TRIM(s.status)"))
     for dim, raw in (("dim_driver", "drivers"), ("dim_constructor", "constructors"),
                      ("dim_circuit", "circuits"), ("dim_status", "status")):
-        dq.log("live", f"{dim}: new entities added from f1.db",
+        dq.log("live", f"{dim}: entities added beyond the CSVs (legacy, f1.db)",
                q(f"SELECT COUNT(*) FROM {dim}") - q(f"SELECT COUNT(*) FROM raw_{raw}"))
     # integrity
     fk = db.execute("PRAGMA foreign_key_check").fetchall()
@@ -193,7 +200,7 @@ def main() -> int:
     started = time.monotonic()
     tmp = WAREHOUSE.with_suffix(".db.building")
     tmp.unlink(missing_ok=True)
-    db = sqlite3.connect(tmp)
+    db = sqlite3.connect(tmp.as_uri(), uri=True)   # uri: so the legacy database can be attached read-only
     db.execute("PRAGMA journal_mode = OFF")      # a throwaway file until the build succeeds
     db.execute("PRAGMA synchronous = OFF")
     db.create_function("clean", 1, clean, deterministic=True)
@@ -207,18 +214,27 @@ def main() -> int:
         print("2/5 silver: cleaning the CSV history")
         db.executescript((HERE / "schema.sql").read_text(encoding="utf-8"))
         run_sql(db, "transform_csv.sql")
-        csv_max = db.execute("SELECT MAX(season) FROM dim_season").fetchone()[0]
+        if LEGACY_DB.exists():
+            print(f"    restoring dropped detail from {LEGACY_DB.name}")
+            # read-only, and detached straight away: ml_features.sql's unqualified DROP TABLE
+            # would otherwise fall through to this database's copy of the table
+            db.execute("ATTACH DATABASE ? AS legacy", (LEGACY_DB.as_uri() + "?mode=ro",))
+            run_sql(db, "transform_legacy.sql")
+            db.commit()
+            db.execute("DETACH DATABASE legacy")
+        else:
+            print(f"    skipped: no data/{LEGACY_DB.name}")
         if LIVE_DB.exists():
-            print(f"3/5 silver: merging live seasons after {csv_max} from {LIVE_DB.name}")
+            print(f"3/5 silver: merging rounds the CSVs don't have from {LIVE_DB.name}")
             db.execute("ATTACH DATABASE ? AS live", (str(LIVE_DB),))
-            run_sql(db, "transform_live.sql", {"csv_max": csv_max})
+            run_sql(db, "transform_live.sql")
         else:
             print("3/5 skipped: no data/f1.db")
         print("4/5 silver: derived flags, lap pace, outliers")
         run_sql(db, "finalize.sql")
         print("5/5 gold: ML feature table")
         run_sql(db, "ml_features.sql")
-        fk = quality_report(db, dq, csv_max)
+        fk = quality_report(db, dq)
         dq.save(db)
         db.commit()
         if LIVE_DB.exists():

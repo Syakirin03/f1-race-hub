@@ -125,6 +125,17 @@ CREATE TABLE IF NOT EXISTS driver_standings (
     PRIMARY KEY (season, round, driver_id)
 );
 
+CREATE TABLE IF NOT EXISTS constructor_standings (
+    season          INTEGER NOT NULL,
+    round           INTEGER NOT NULL,          -- standings after this round
+    constructor_id  TEXT    NOT NULL REFERENCES constructors (constructor_id),
+    position        INTEGER,
+    position_text   TEXT,
+    points          REAL    NOT NULL DEFAULT 0,
+    wins            INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (season, round, constructor_id)
+);
+
 -- A driver can race for more than one team in a season.
 CREATE TABLE IF NOT EXISTS driver_standing_teams (
     season          INTEGER NOT NULL,

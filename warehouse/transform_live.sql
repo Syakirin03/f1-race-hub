@@ -1,12 +1,13 @@
 -- ============================================================
 -- live.* (data/f1.db, synced from the API by ingest.py) -> silver,
--- for seasons newer than the CSV history (:csv_max).
+-- for every round the CSVs don't have yet, including the rest of a
+-- season they only partly cover.
 -- Entities are matched on their natural keys (driver_ref, constructor_ref,
 -- circuit_ref); new ones (rookies, Audi, Cadillac, ...) get new keys.
 -- ============================================================
 
 INSERT INTO dim_season (season, url, source)
-SELECT DISTINCT season, NULL, 'live' FROM live.races WHERE season > :csv_max;
+SELECT DISTINCT season, NULL, 'live' FROM live.races WHERE season NOT IN (SELECT season FROM dim_season);
 
 INSERT INTO dim_circuit (circuit_ref, name, locality, country, lat, lng, url)
 SELECT circuit_id, TRIM(name), TRIM(locality), TRIM(country), lat, lng, url FROM live.circuits
@@ -29,7 +30,7 @@ WHERE status IS NOT NULL AND status NOT IN (SELECT status FROM dim_status);
 INSERT INTO dim_race (season, round, race_name, circuit_key, race_date, race_time, has_sprint, url, source)
 SELECT r.season, r.round, r.race_name, c.circuit_key, r.date, RTRIM(r.time, 'Z'), NULL, r.url, 'live'
 FROM live.races r JOIN dim_circuit c ON c.circuit_ref = r.circuit_id
-WHERE r.season > :csv_max;
+WHERE NOT EXISTS (SELECT 1 FROM dim_race x WHERE x.season = r.season AND x.round = r.round);
 
 CREATE TEMP VIEW live_race AS
 SELECT race_key, season, round FROM dim_race WHERE source = 'live';
@@ -73,3 +74,17 @@ SELECT x.race_key, d.driver_key, s.position, s.position_text, s.points, s.wins
 FROM live.driver_standings s
 JOIN live_race x   ON x.season = s.season AND x.round = s.round
 JOIN dim_driver d  ON d.driver_ref = s.driver_id;
+
+INSERT INTO fct_constructor_standing (race_key, constructor_key, position, position_text, points, wins)
+SELECT x.race_key, k.constructor_key, s.position, s.position_text, s.points, s.wins
+FROM live.constructor_standings s
+JOIN live_race x         ON x.season = s.season AND x.round = s.round
+JOIN dim_constructor k   ON k.constructor_ref = s.constructor_id;
+
+-- the API has no per-race constructor table, so sum the team's two cars
+INSERT INTO fct_constructor_result (race_key, constructor_key, points, status)
+SELECT x.race_key, k.constructor_key, SUM(r.points), NULL
+FROM live.results r
+JOIN live_race x         ON x.season = r.season AND x.round = r.round
+JOIN dim_constructor k   ON k.constructor_ref = r.constructor_id
+GROUP BY x.race_key, k.constructor_key;

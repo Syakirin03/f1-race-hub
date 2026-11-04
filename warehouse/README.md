@@ -1,8 +1,10 @@
 # F1 data warehouse
 
-`data/warehouse.db` combines the historical dataset (`data/*.csv`, 1950–2024) with
-the live seasons in `data/f1.db` (2026), cleaned and shaped for analysis and
-machine learning. The website doesn't use it; it keeps running on `f1.db`.
+`data/warehouse.db` combines the historical dataset (`data/*.csv`, 1950 to 2026
+round 18) with any newer rounds in `data/f1.db`, cleaned and shaped for analysis
+and machine learning. Detail the current CSVs dropped comes back from
+`data/warehouse_legacy.db`. The website doesn't use the warehouse; it keeps running
+on `f1.db`.
 
 ```
 python warehouse/build_warehouse.py     # full rebuild, ~10 s
@@ -57,8 +59,23 @@ Use `pre_*` features for season forecasts (qualifying isn't known yet) and add
 Missing values are structural, not dirt: season features are empty at round 1,
 circuit history on a first visit, `grid` for pit-lane starts.
 
-Known gap: 2025 isn't in either source. Load it with `python ingest.py --season 2025`
-and rebuild, so 2026's "last 5 races" features don't jump from 2024.
+## Sources and precedence
+
+- **CSVs** win for every round they contain, and their IDs are not stable between
+  deliveries, so anything outside `transform_csv.sql` matches on natural keys.
+- **`f1.db`** fills every round the CSVs don't have, per round, including the rest
+  of a part-covered season. Run `python ingest.py` first. Constructor results for
+  these rounds are summed from the race results.
+- **`warehouse_legacy.db`** is a frozen copy of the warehouse built from the previous
+  CSV delivery (`data/` is gitignored, so it's the only copy). `transform_legacy.sql`
+  uses its `raw_*` tables to restore failed-to-qualify rows (`fct_result.source =
+  'legacy'`, plus their drivers, constructors and statuses) and the 2023–24 statuses
+  the CSVs reduced to `Retired` / `Lapped`. CSV `Did not start` values are kept. If
+  the file is missing, the build skips this step.
+
+Known gaps: 2025 and 2026 statuses are generic in every source, so
+`pre_con_last10_mech_dnf_rate` carries no signal from them. Practice sessions
+(`practice_sessions.csv`) aren't loaded.
 
 ## Example queries
 

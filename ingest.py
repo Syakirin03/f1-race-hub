@@ -35,7 +35,7 @@ MIN_INTERVAL = 1.0    # seconds between requests: the API throttles sustained tr
 USER_AGENT = "F1RaceHub-ingest/1.0"
 
 TABLES = ("circuits", "drivers", "constructors", "races", "results",
-          "qualifying", "laps", "pit_stops", "driver_standings")
+          "qualifying", "laps", "pit_stops", "driver_standings", "constructor_standings")
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +297,21 @@ def sync_standings(db, api, season: int, rnd: int) -> int:
     return len(rows)
 
 
+def sync_constructor_standings(db, api, season: int, rnd: int) -> int:
+    lists = api.get(f"{season}/{rnd}/constructorstandings.json", limit=PAGE)["MRData"]["StandingsTable"]["StandingsLists"]
+    entries = lists[0]["ConstructorStandings"] if lists else []
+    if not entries:
+        return 0
+    rows = [{"season": season, "round": rnd, "constructor_id": e["Constructor"]["constructorId"],
+             "position": to_int(e.get("position")), "position_text": e.get("positionText"),
+             "points": to_float(e.get("points")) or 0.0, "wins": to_int(e.get("wins")) or 0} for e in entries]
+    with db:
+        upsert(db, "constructors", [constructor_row(e["Constructor"]) for e in entries], ["constructor_id"])
+        replace_round(db, "constructor_standings", season, rnd, rows, ["season", "round", "constructor_id"])
+        mark(db, season, rnd, "cstandings", len(rows))
+    return len(rows)
+
+
 def sync_pitstops(db, api, season: int, rnd: int) -> int:
     rows = []
     for page in api.pages(f"{season}/{rnd}/pitstops.json"):
@@ -349,7 +364,8 @@ def run(season: str = "current", full: bool = False) -> None:
 
         latest = max(done) if done else None
         # cheap per-round datasets first, then the heavy lap telemetry
-        for dataset, fn in (("standings", sync_standings), ("pitstops", sync_pitstops), ("laps", sync_laps)):
+        for dataset, fn in (("standings", sync_standings), ("cstandings", sync_constructor_standings),
+                            ("pitstops", sync_pitstops), ("laps", sync_laps)):
             have = set() if full else synced_rounds(db, year, dataset)
             todo = [r for r in done if r not in have or r == latest]
             for rnd in todo:
