@@ -2,12 +2,13 @@
 """
 Next-season championship prediction for the website's "2027 Prediction" page.
 
-The same method as ml/02_season_2027.ipynb (which explains every step):
+The same method as ml/02_season_2027.ipynb (which explains every step), except that
+the notebook gives every car one retirement rate and this script uses each team's own:
   1. Plackett-Luce strength for every driver in every season (finishers only)
   2. regression: how much of a car's and a driver's strength carries into the next season
   3. how far teams and drivers typically land from that prediction (minus measurement noise)
   4. Monte Carlo: simulate the next season 10,000 times
-plus a walk-forward backtest of the whole method on 2016-2024.
+plus a walk-forward backtest of the whole method from 2016 onwards.
 
     python warehouse/build_warehouse.py      # first, so the warehouse has the latest races
     python ml/predict_next_season.py         # writes predictions/next-season.json
@@ -35,6 +36,8 @@ OUT = ROOT / "predictions" / "next-season.json"
 
 N_RACES = 24            # next season's calendar isn't published yet
 N_SIMS = 10_000
+DNF_PRIOR_STARTS = 40   # a team's DNF rate is pulled to the league's as if it had this many extra starts (about a season)
+CLOSE_CALL = 0.60       # "too close to call" when the favourite outscores a rival in fewer simulated seasons than this
 LINEUP_CHANGES: dict[str, str | None] = {
     # "driver_ref": "constructor_ref" moves a driver, a new name adds a rookie, None removes a driver
 }
@@ -131,7 +134,7 @@ def predict(beta, part):
 
 
 def simulate_season(lineup, mu, sigma_team, sigma_driver, n_races, dnf_rate, n_sims=N_SIMS, seed=0):
-    """Points per driver in n_sims simulated seasons -> array (n_sims, n_drivers)."""
+    """Points per driver in n_sims simulated seasons -> array (n_sims, n_drivers). dnf_rate: one per driver."""
     rng = np.random.default_rng(seed)
     n = len(lineup)
     _, team_idx = np.unique(lineup.team.to_numpy(), return_inverse=True)
@@ -151,6 +154,17 @@ def simulate_season(lineup, mu, sigma_team, sigma_driver, n_races, dnf_rate, n_s
 # ---------------------------------------------------------------------------
 def r(x, nd=4):
     return None if x is None or (isinstance(x, float) and np.isnan(x)) else round(float(x), nd)
+
+
+def title_call(pts, ids, titles):
+    """Which rivals the favourite doesn't clearly outscore. pts: (n_sims, n), titles: each one's title share."""
+    order = np.argsort(-np.asarray(titles))
+    fav = order[0]
+    beats = (pts[:, [fav]] > pts).mean(axis=0) + (pts[:, [fav]] == pts).mean(axis=0) / 2
+    rivals = [i for i in order[1:] if beats[i] < CLOSE_CALL]
+    closest = min(order[1:], key=lambda i: beats[i])
+    return {"tooClose": bool(rivals), "contenders": [ids[i] for i in (fav, *rivals)],
+            "closestRival": ids[closest], "beatsClosestRival": r(beats[closest])}
 
 
 def main() -> int:
@@ -197,6 +211,14 @@ def main() -> int:
 
     dnf_by_season = 1 - df.groupby("season").finished.mean()
     recent_dnf_rate = lambda before: float(dnf_by_season[dnf_by_season.index < before].tail(3).mean())
+    team_starts = df.groupby(["season", "team"]).finished.agg(starts="size", finishes="sum")
+
+    def team_dnf_rate(teams, season):
+        """Retirement chance per car in season: the team's record the year before, pulled to the recent average."""
+        prev = team_starts.loc[season - 1]
+        starts = teams.map(prev.starts).fillna(0).to_numpy()
+        dnfs = starts - teams.map(prev.finishes).fillna(0).to_numpy()
+        return (dnfs + DNF_PRIOR_STARTS * recent_dnf_rate(season)) / (starts + DNF_PRIOR_STARTS)
 
     # 2-3. carry-over and surprise --------------------------------------------
     beta, sigma_team, sigma_driver, noise = fit_carryover(pairs, strengths)
@@ -208,7 +230,7 @@ def main() -> int:
     lineup["team"] = lineup.constructor_ref.map(LINEAGE).fillna(lineup.constructor_ref)
     field = features(lineup, last, strengths, team_strength)
     mu = predict(beta, field)
-    dnf_rate = recent_dnf_rate(target)
+    dnf_rate = team_dnf_rate(field.team, target)
     pts = simulate_season(field, mu, sigma_team, sigma_driver, N_RACES, dnf_rate)
     n_sims, n = pts.shape
     final_pos = np.argsort(np.argsort(-pts, axis=1), axis=1) + 1
@@ -236,8 +258,12 @@ def main() -> int:
     constructors_out = sorted([
         {"id": ref, "name": team_name(ref), "title": r(champ_team.get(ref, 0.0)), "mean": r(team_pts[ref].mean(), 1),
          "p10": r(np.percentile(team_pts[ref], 10), 0), "p90": r(np.percentile(team_pts[ref], 90), 0),
-         "teamPrev": r(field.loc[field.constructor_ref == ref, "team_prev"].iloc[0])}
+         "teamPrev": r(field.loc[field.constructor_ref == ref, "team_prev"].iloc[0]),
+         "dnfRate": r(dnf_rate[(field.constructor_ref == ref).to_numpy()][0])}
         for ref in team_pts.columns], key=lambda t: -t["mean"])
+    call = {"drivers": title_call(pts, field.driver_ref.tolist(), (final_pos == 1).mean(axis=0)),
+            "constructors": title_call(team_pts.to_numpy(), team_pts.columns.tolist(),
+                                       [champ_team.get(ref, 0.0) for ref in team_pts.columns])}
 
     # the retirement trap, on the latest season
     latest = df[df.season == last]
@@ -271,7 +297,7 @@ def main() -> int:
         for method, m, st, sd in [("repeat", (bf.team_prev + bf.driver_edge).to_numpy(), 0.0, 0.0),
                                   ("noSurprise", predict(beta_y, bf), 0.0, 0.0),
                                   ("model", predict(beta_y, bf), s_team, s_drv)]:
-            sim = simulate_season(bf, m, st, sd, n_races, recent_dnf_rate(y), n_sims=4000)
+            sim = simulate_season(bf, m, st, sd, n_races, team_dnf_rate(bf.team, y), n_sims=4000)
             lo, hi = np.percentile(sim, [10, 90], axis=0)
             p_champ = (sim.argmax(axis=1) == champion).mean()
             rows.append({"season": y, "method": method, "champion": bf.driver_ref[champion],
@@ -293,8 +319,8 @@ def main() -> int:
         "generatedAt": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "dataThrough": {"season": last, "round": last_round, "roundsInSeason": rounds_in_season,
                         "race": last_race.race_name, "date": last_race.race_date},
-        "settings": {"simulations": n_sims, "races": N_RACES, "dnfRate": r(dnf_rate), "points": POINTS.tolist(),
-                     "lineupChanges": LINEUP_CHANGES},
+        "settings": {"simulations": n_sims, "races": N_RACES, "dnfRate": r(recent_dnf_rate(target)), "points": POINTS.tolist(),
+                     "closeCall": CLOSE_CALL, "lineupChanges": LINEUP_CHANGES},
         "model": {
             "coefficients": {k: r(v) for k, v in beta.items()},
             "sigmaTeam": r(sigma_team), "sigmaDriver": r(sigma_driver), "measurementNoise": r(noise),
@@ -305,6 +331,7 @@ def main() -> int:
         },
         "drivers": drivers_out,
         "constructors": constructors_out,
+        "call": call,
         "retirementTrap": trap,
         "carryover": carryover,
         "backtest": backtest,
@@ -316,6 +343,9 @@ def main() -> int:
           f"({n_sims:,} seasons x {N_RACES} races, {time.monotonic() - started:.0f}s)")
     for d in drivers_out[:6]:
         print(f"  {d['name']:<22} title {d['title']:>6.1%}  expected {d['mean']:>5.0f} pts  ({d['p10']:.0f}-{d['p90']:.0f})")
+    for label, c in call.items():
+        print(f"  {label}: {'too close to call' if c['tooClose'] else 'favourite called'} "
+              f"({', '.join(c['contenders'])}; beats {c['closestRival']} in {c['beatsClosestRival']:.0%})")
     s = backtest["summary"]["model"]
     print(f"backtest 2016-{bt.season.max()}: 80% range coverage {s['coverage']:.0%}, order correlation {s['orderCorr']:.2f}")
     print(f"wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size / 1e3:.0f} KB)")

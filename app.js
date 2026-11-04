@@ -2060,6 +2060,19 @@ function signed2(x) { return (x < 0 ? "−" : "+") + Math.abs(x).toFixed(2); }
 function lastName(name) { return name.split(" ").slice(-1)[0]; }
 function shortTeam(t) { return t.replace(/ F1 Team$/, ""); }
 const METHOD_LABELS = { repeat: "Last year repeats", noSurprise: "Model, no winter surprise", model: "Model (used here)" };
+const byId = (rows, id) => rows.find((x) => x.id === id);
+
+/* headline tile: names the favourite only when the simulation can separate them from their rivals */
+function titleKpi(call, rows, short, labels, meta) {
+  const first = byId(rows, call.contenders[0]);
+  if (!call.tooClose) return `<div class="kpi"><div class="k">${labels.favourite}</div><div class="v">${esc(short(first))} · ${pctLabel(first.title)}</div><div class="meta2">${esc(meta(first))}</div></div>`;
+  const leaders = call.contenders.slice(0, 3).map((id) => `${esc(short(byId(rows, id)))} ${pctLabel(byId(rows, id).title)}`).join(" · ");
+  return `<div class="kpi"><div class="k">${labels.title}</div><div class="v">Too close to call</div><div class="meta2">${leaders}</div></div>`;
+}
+function closeCallNote(call, rows, short) {
+  if (!call.tooClose) return "";
+  return ` <b>Too close to call:</b> ${esc(short(byId(rows, call.contenders[0])))} outscores ${esc(short(byId(rows, call.closestRival)))} in only ${pctInt(call.beatsClosestRival)} of simulated seasons.`;
+}
 
 async function renderPrediction() {
   showLoader("Loading the prediction…");
@@ -2079,7 +2092,7 @@ async function renderPrediction() {
 }
 
 function paintPrediction(P) {
-  const { drivers: D, constructors: C, model: M, backtest: B, settings: S, dataThrough: T } = P;
+  const { drivers: D, constructors: C, model: M, backtest: B, settings: S, dataThrough: T, call: CALL } = P;
   const co = M.coefficients, sm = B.summary;
   const fav = [...D].sort((a, b) => b.title - a.title)[0];
   const favTeam = [...C].sort((a, b) => b.title - a.title)[0];
@@ -2090,6 +2103,8 @@ function paintPrediction(P) {
   const trap = P.retirementTrap.slice(0, 8);
   const trapWorst = [...trap].sort((a, b) => (b.strength - b.strengthAllStarters) - (a.strength - a.strengthAllStarters))[0];
   const changes = Object.keys(S.lineupChanges || {}).length;
+  const dnfRates = C.map((t) => t.dnfRate);
+  const driverLabel = (d) => d.code, teamLabel = (t) => shortTeam(t.name);
 
   const status = provisional
     ? `<span class="status-pill open">Provisional: uses ${T.season} up to round ${T.round} of ${T.roundsInSeason} (${esc(T.race.replace(/ Grand Prix$/, ""))}) and updates as the season finishes</span>`
@@ -2112,8 +2127,8 @@ function paintPrediction(P) {
     </nav>
 
     <div class="kpi-row">
-      <div class="kpi"><div class="k">Favourite</div><div class="v">${esc(fav.code)} · ${pctLabel(fav.title)}</div><div class="meta2">${esc(fav.name)}</div></div>
-      <div class="kpi"><div class="k">Constructors' favourite</div><div class="v">${esc(shortTeam(favTeam.name))} · ${pctLabel(favTeam.title)}</div><div class="meta2">title chance</div></div>
+      ${titleKpi(CALL.drivers, D, driverLabel, { favourite: "Favourite", title: "Drivers' title" }, (d) => d.name)}
+      ${titleKpi(CALL.constructors, C, teamLabel, { favourite: "Constructors' favourite", title: "Constructors' title" }, () => "title chance")}
       <div class="kpi"><div class="k">Simulated seasons</div><div class="v">${sims}</div><div class="meta2">× ${S.races} races each</div></div>
       <div class="kpi"><div class="k">Track record</div><div class="v">${pctInt(sm.model.coverage)}</div><div class="meta2">inside the 80% range, ${btFirst}–${String(btLast).slice(2)}</div></div>
     </div>
@@ -2122,12 +2137,12 @@ function paintPrediction(P) {
     <div class="dash-grid" style="margin-top:0">
       <div class="chart-card">
         <h3>Drivers' title chance</h3>
-        <p class="csub">Share of the ${sims} simulated ${P.season} seasons that each driver finishes on top.</p>
+        <p class="csub">Share of the ${sims} simulated ${P.season} seasons that each driver finishes on top.${closeCallNote(CALL.drivers, D, (d) => lastName(d.name))}</p>
         <div class="bar-list">${probBars(D.filter((d) => d.title >= 0.005).sort((a, b) => b.title - a.title), (d) => `${d.code} · ${lastName(d.name)}`, (d) => d.team)}</div>
       </div>
       <div class="chart-card">
         <h3>Constructors' title chance</h3>
-        <p class="csub">Both cars' points added together, in the same simulated seasons.</p>
+        <p class="csub">Both cars' points added together, in the same simulated seasons.${closeCallNote(CALL.constructors, C, teamLabel)}</p>
         <div class="bar-list">${probBars(C.filter((t) => t.title >= 0.005), (t) => shortTeam(t.name), (t) => t.name)}</div>
       </div>
 
@@ -2197,8 +2212,9 @@ function paintPrediction(P) {
       </div>
       <div class="step">
         <span class="step__n">4</span><h3>Simulate ${P.season}, ${sims} times</h3>
-        <p>Each simulated season draws a winter surprise for every car and driver, then runs <b>${S.races} races</b>. Each driver
-          retires with probability <b>${pctInt(S.dnfRate)}</b> (the recent average); the finishers are ordered by strength plus
+        <p>Each simulated season draws a winter surprise for every car and driver, then runs <b>${S.races} races</b>. Each car
+          retires at its <b>team's own rate</b>, from <b>${pctInt(Math.min(...dnfRates))}</b> to <b>${pctInt(Math.max(...dnfRates))}</b>
+          (its ${T.season} record, pulled towards the ${pctInt(S.dnfRate)} recent average); the finishers are ordered by strength plus
           random race-day luck, and score ${S.points.join("-")}. A title chance is the share of seasons a driver ends on top.</p>
         <span class="step__tag sim">Simulation</span>
       </div>
@@ -2328,11 +2344,12 @@ function paintPrediction(P) {
       ${provisional ? `<li><b>${T.season} isn't finished.</b> The prediction uses ${T.round} of ${T.roundsInSeason} rounds and is regenerated as results come in.</li>` : ""}
       <li><b>Line-ups:</b> every driver is assumed to stay with their team from the latest race${changes ? `, apart from ${changes} change${changes === 1 ? "" : "s"} entered by hand` : ""}. Announced moves aren't otherwise included.</li>
       <li><b>Calendar:</b> ${S.races} races are assumed. Sprint races and their points aren't modelled.</li>
-      <li><b>Reliability:</b> every car gets the same ${pctInt(S.dnfRate)} chance of retiring from each race.</li>
+      <li><b>Reliability:</b> a team's retirement rate comes from its ${T.season} record, pulled towards the ${pctInt(S.dnfRate)} recent average. It can't see a weak spot being fixed or a new engine arriving.</li>
       <li><b>Development:</b> after the winter surprise, a car's strength stays fixed for the whole simulated season.</li>
       <li><b>Rules:</b> the model knows nothing about regulation changes. In a second year of the same rules the field usually closes up, which it can't anticipate.</li>
       ${M.missingSeasons.length ? `<li><b>Missing data:</b> ${M.missingSeasons.join(", ")} results aren't in the training data.</li>` : ""}
-      <li><b>A probability, not a pick:</b> even the favourite, at ${pctLabel(fav.title)}, fails to win the title in most simulated seasons.</li>
+      <li><b>A probability, not a pick:</b> even the favourite, at ${pctLabel(fav.title)}, fails to win the title in most simulated seasons.
+        A title is marked <b>too close to call</b> when the favourite outscores a rival in fewer than ${pctInt(S.closeCall)} of them.</li>
     </ul>
 
     <p class="pipeline">

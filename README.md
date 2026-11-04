@@ -31,7 +31,7 @@ open any driver's season data (stats + charts).
 - **2027 Prediction** — a machine-learning forecast of next season's championship:
   title chances, predicted points ranges and final-position probabilities, plus
   a plain-English explanation of the model, the calculation for every driver,
-  its backtest on 2016–2024 and its limitations. See
+  its backtest from 2016 onwards and its limitations. See
   [Next-season prediction](#next-season-prediction).
 - **Drivers** (sidebar dropdown) — pick a driver for their season stats, a
   grid-vs-finish chart, a points-progression chart (with a dashed season-end
@@ -149,7 +149,9 @@ git add predictions/next-season.json && git commit -m "Update 2027 prediction" &
 `ml/predict_next_season.py` needs numpy, pandas and scipy, and takes a few seconds.
 Edit `N_RACES` or `LINEUP_CHANGES` at the top of it when the 2027 calendar or
 driver moves are announced. The method is explained step by step in
-`ml/02_season_2027.ipynb`.
+`ml/02_season_2027.ipynb`, except that the script uses each team's own retirement
+rate. The page says "too close to call" instead of naming a favourite when the
+favourite outscores a rival in fewer than 60% of simulated seasons (`CLOSE_CALL`).
 
 ## Data source
 
