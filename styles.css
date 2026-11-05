@@ -184,9 +184,9 @@ button, select, input { font: inherit; color: inherit; }
   content: ""; position: fixed; inset: 0; z-index: -1;
   background: var(--wallpaper) center / cover no-repeat;
 }
+/* The panel sits on .main-col, not .main/.legal, so it fills any screen width while the content keeps its max-width. */
 :root[data-wallpaper] .sidebar,
-:root[data-wallpaper] .main,
-:root[data-wallpaper] .legal,
+:root[data-wallpaper] .main-col,
 :root[data-wallpaper] .topbar {
   background: color-mix(in srgb, var(--bg) var(--panel, 85%), transparent);
   -webkit-backdrop-filter: blur(var(--blur, 0px)); backdrop-filter: blur(var(--blur, 0px));
